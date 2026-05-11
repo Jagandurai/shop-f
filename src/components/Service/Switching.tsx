@@ -5,7 +5,16 @@ import Image from "next/image";
 import styles from "./Switching.module.scss";
 import { useBookingContext } from "@/src/components/Booking/BookingContext";
 
-const tabContent = {
+type ServiceItem = {
+  title: string;
+  imgSrc: string;
+  description: string;
+};
+
+type TabType = "hair" | "skin" | "body";
+type TabContent = Record<TabType, Record<string, ServiceItem>>;
+
+const tabContent: TabContent = {
   hair: {
     haircuts: {
       title: "Haircuts & Styling",
@@ -121,8 +130,6 @@ const tabContent = {
   },
 };
 
-type TabType = keyof typeof tabContent;
-
 const TAB_DEFAULT_OPTION: Record<TabType, string> = {
   hair: "haircuts",
   skin: "skinCare",
@@ -131,8 +138,9 @@ const TAB_DEFAULT_OPTION: Record<TabType, string> = {
 
 const Switching = () => {
   const [activeTab, setActiveTab] = useState<TabType>("hair");
-  const [activeOption, setActiveOption] = useState(TAB_DEFAULT_OPTION.hair);
-
+  const [activeOption, setActiveOption] = useState<string>(
+    TAB_DEFAULT_OPTION.hair
+  );
   const { openForm } = useBookingContext();
 
   const handleTabClick = (tab: TabType) => {
@@ -141,9 +149,8 @@ const Switching = () => {
   };
 
   const currentContent =
-    tabContent[activeTab][
-      activeOption as keyof (typeof tabContent)[typeof activeTab]
-    ];
+    tabContent[activeTab][activeOption] ??
+    tabContent[activeTab][TAB_DEFAULT_OPTION[activeTab]];
 
   return (
     <section className={styles.switchingContainer} aria-label="Beauty Services">
@@ -159,10 +166,10 @@ const Switching = () => {
         </div>
 
         <nav className={styles.tabs} aria-label="Service categories">
-          {(Object.keys(tabContent) as TabType[]).map((tab) => (
+          {Object.keys(tabContent).map((tab) => (
             <button
               key={tab}
-              onClick={() => handleTabClick(tab)}
+              onClick={() => handleTabClick(tab as TabType)}
               className={activeTab === tab ? styles.active : ""}
               aria-pressed={activeTab === tab}
             >
@@ -173,14 +180,10 @@ const Switching = () => {
 
         <div className={styles.contentContainer}>
           <nav className={styles.leftOptions} aria-label="Service options">
-            {(
-              Object.keys(tabContent[activeTab]) as Array<
-                keyof (typeof tabContent)[typeof activeTab]
-              >
-            ).map((option) => (
+            {Object.keys(tabContent[activeTab]).map((option) => (
               <button
-                key={String(option)}
-                onClick={() => setActiveOption(String(option))}
+                key={option}
+                onClick={() => setActiveOption(option)}
                 className={activeOption === option ? styles.active : ""}
                 aria-pressed={activeOption === option}
               >
