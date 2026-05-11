@@ -1,0 +1,25 @@
+.heroBanner {
+  position: relative;
+  width: 100%;
+  height: 80vh;
+
+  @media (max-width: 1024px) {
+    height: 50vh;
+  }
+
+  @media (max-width: 768px) {
+    height: 40vh;
+  }
+}
+
+.heroImage {
+  background-image: url("https://res.cloudinary.com/dtiaycw2o/image/upload/v1756199688/gallery-hero_pd7p46.webp");
+  background-size: cover;
+  background-position: center;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}

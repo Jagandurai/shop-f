@@ -1,0 +1,163 @@
+.wrapper {
+  width: 100%;
+  padding: 3.5rem 5rem 4rem;
+  background: linear-gradient(180deg, #fffefe 0%, #fff8fc 50%, #fff3f8 100%);
+}
+
+.inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem 0;
+  max-width: 1200px;
+  margin: 0 auto 2.5rem;
+}
+
+.reverse {
+  flex-direction: row-reverse;
+}
+
+.leftContent {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-width: 100%;
+}
+
+.videoFrame {
+  width: fit-content;
+  border-radius: 28px;
+  backdrop-filter: blur(8px);
+}
+
+.video {
+  width: auto;
+  height: 100%;
+  max-height: 520px;
+  aspect-ratio: 9 / 16;
+  border-radius: 22px;
+  object-fit: cover;
+  display: block;
+}
+
+.rightContent {
+  flex: 1;
+  text-align: left;
+  max-width: 580px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #efd9f5;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8b2398;
+  box-shadow: 0 8px 24px rgba(123, 31, 162, 0.06);
+}
+
+.rightContent h2 {
+  font-size: 2.65rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  color: #4f235d;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.rightContent p {
+  font-size: 1rem;
+  line-height: 1.9;
+  color: #5f5866;
+}
+
+@media (max-width: 1024px) {
+  .container {
+    gap: 1rem;
+  }
+
+  .video {
+    max-height: 460px;
+  }
+
+  .rightContent h2 {
+    font-size: 2.2rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .wrapper {
+    padding: 2.8rem 0.9rem 3.2rem;
+  }
+
+  .container,
+  .reverse {
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1rem 0;
+    margin-bottom: 2rem;
+  }
+
+  .video {
+    width: 100%;
+    max-width: 320px;
+    max-height: none;
+  }
+
+  .videoFrame {
+    padding: 0.35rem;
+    border-radius: 22px;
+  }
+
+  .rightContent {
+    text-align: center;
+    max-width: 100%;
+  }
+
+  .rightContent h2 {
+    font-size: 1.8rem;
+    margin-top: 0.9rem;
+  }
+
+  .rightContent p {
+    font-size: 0.95rem;
+    line-height: 1.8;
+  }
+}
+
+@media (max-width: 480px) {
+  .wrapper {
+    padding: 2.5rem 0.75rem 3rem;
+  }
+
+  .video {
+    max-width: 280px;
+  }
+
+  .tag {
+    font-size: 0.66rem;
+    padding: 0.5rem 0.85rem;
+  }
+
+  .rightContent h2 {
+    font-size: 1.55rem;
+  }
+
+  .rightContent p {
+    font-size: 0.9rem;
+    line-height: 1.75;
+  }
+}

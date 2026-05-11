@@ -1,0 +1,24 @@
+.mapContainer {
+  width: 100%;
+  margin-top: 30px;
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+.mapIframe {
+  width: 100%;
+  height: 300px;
+  border-radius: 8px;
+  transition: box-shadow 0.3s ease;
+
+  &:hover {
+    box-shadow: 0 4px 15px green;
+  }
+}
+
+@media (max-width: 768px) {
+  .mapIframe {
+    height: 300px;
+  }
+}

@@ -1,0 +1,285 @@
+.contactPage {
+  position: relative;
+  padding: 56px 24px;
+  background-image: url("https://res.cloudinary.com/dtiaycw2o/image/upload/v1756199687/home-bg-1_mspklj.webp");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 248, 252, 0.94),
+    rgba(255, 239, 247, 0.88)
+  );
+  backdrop-filter: blur(0.1px);
+}
+
+.contactContainer {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 0.95fr 1.05fr;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  gap: 28px;
+  color: #111827;
+  align-items: stretch;
+}
+
+.contactInfo,
+.contactForm {
+  min-width: 0;
+}
+
+.contactInfo {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 6px;
+
+  h2 {
+    font-size: 2.55rem;
+    font-weight: 800;
+    line-height: 1.12;
+    margin: 0 0 12px;
+    color: rgb(86, 22, 121);
+  }
+}
+
+.badge {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-bottom: 14px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(123, 31, 162, 0.1);
+  color: #7b1fa2;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.infoIntro {
+  max-width: 540px;
+  font-size: 0.98rem;
+  line-height: 1.75;
+  color: #4b5563;
+  margin-bottom: 20px;
+}
+
+.infoCard {
+  display: grid;
+  gap: 14px;
+  max-width: 500px;
+}
+
+.infoBlock {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(123, 31, 162, 0.08);
+  box-shadow: 0 8px 22px rgba(123, 31, 162, 0.08);
+
+  p {
+    margin: 5px 0 0;
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #1f2937;
+  }
+}
+
+.infoLabel {
+  display: inline-block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9d174d;
+}
+
+.contactForm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.formCard {
+  width: 100%;
+  padding: 24px 22px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.589);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(10px);
+
+  h3 {
+    margin: 0 0 16px;
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: #7b1fa2;
+    text-align: center;
+  }
+}
+
+.formRow {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.inputLabel {
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.formControl {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #e5d7e9;
+  background: #fff;
+  font-size: 0.96rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+  &:focus {
+    border-color: #b5179e;
+    box-shadow: 0 0 0 4px rgba(181, 23, 158, 0.08);
+  }
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 13px 16px;
+  font-size: 0.96rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #7b1fa2, #d81b60);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+  box-shadow: 0 10px 20px rgba(123, 31, 162, 0.16);
+
+  &:hover {
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+.errorMessage {
+  color: #dc2626;
+  font-size: 0.78rem;
+  margin-top: 5px;
+  font-weight: 500;
+}
+
+@media (max-width: 992px) {
+  .contactPage {
+    padding: 46px 18px;
+  }
+
+  .contactContainer {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .contactInfo {
+    padding: 0;
+
+    h2 {
+      font-size: 2.15rem;
+    }
+  }
+
+  .infoIntro,
+  .infoCard {
+    max-width: 100%;
+  }
+
+  .formCard {
+    padding: 22px 18px;
+  }
+}
+
+@media (max-width: 640px) {
+  .contactPage {
+    padding: 38px 14px;
+  }
+
+  .badge {
+    margin-bottom: 12px;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+  }
+
+  .contactInfo {
+    h2 {
+      font-size: 1.85rem;
+      margin-bottom: 10px;
+    }
+  }
+
+  .infoIntro {
+    font-size: 0.93rem;
+    line-height: 1.65;
+    margin-bottom: 16px;
+  }
+
+  .infoBlock {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .formCard {
+    padding: 18px 14px;
+    border-radius: 16px;
+
+    h3 {
+      font-size: 1.28rem;
+      margin-bottom: 14px;
+    }
+  }
+
+  .formRow {
+    margin-bottom: 13px;
+  }
+
+  .inputLabel {
+    font-size: 0.86rem;
+    margin-bottom: 5px;
+  }
+
+  .formControl {
+    padding: 11px 12px;
+    font-size: 0.92rem;
+    border-radius: 10px;
+  }
+
+  .textarea {
+    min-height: 92px;
+  }
+
+  .submitBtn {
+    padding: 12px 14px;
+    font-size: 0.92rem;
+  }
+}

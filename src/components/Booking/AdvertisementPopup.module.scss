@@ -1,0 +1,173 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(17, 24, 39, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  background: linear-gradient(180deg, #ffffff 0%, #fff8fc 100%);
+  border-radius: 24px;
+  padding: 2rem 1.5rem 1.5rem;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.22);
+  text-align: center;
+  border: 1px solid rgba(236, 72, 153, 0.12);
+  outline: none;
+  animation: popupFadeIn 0.25s ease;
+}
+
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.closeButton {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #6b7280;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: #111827;
+    transform: scale(1.05);
+  }
+}
+
+.iconWrap {
+  width: 74px;
+  height: 74px;
+  margin: 0 auto 1rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fde7f3, #ffe9da);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon {
+  font-size: 2rem;
+}
+
+.title {
+  margin: 0 0 0.75rem;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #8b1c8f;
+}
+
+.description {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.8;
+  color: #4b5563;
+}
+
+.actions {
+  display: flex;
+  gap: 0.85rem;
+  margin-top: 1.5rem;
+}
+
+.primaryButton,
+.secondaryButton {
+  flex: 1;
+  border: none;
+  border-radius: 14px;
+  padding: 0.95rem 1rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.primaryButton {
+  background: linear-gradient(90deg, #7b1fa2, #d81b60);
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(216, 27, 96, 0.18);
+
+  &:hover {
+    transform: translateY(-1px);
+  }
+}
+
+.secondaryButton {
+  background: #f3f4f6;
+  color: #111827;
+
+  &:hover {
+    background: #e5e7eb;
+  }
+}
+
+@media (max-width: 640px) {
+  .modal {
+    max-width: 100%;
+    border-radius: 20px;
+    padding: 1.7rem 1rem 1rem;
+  }
+
+  .closeButton {
+    top: 10px;
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    font-size: 1.3rem;
+  }
+
+  .iconWrap {
+    width: 62px;
+    height: 62px;
+    margin-bottom: 0.85rem;
+  }
+
+  .icon {
+    font-size: 1.7rem;
+  }
+
+  .title {
+    font-size: 1.45rem;
+  }
+
+  .description {
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+
+  .actions {
+    flex-direction: column;
+    gap: 0.7rem;
+    margin-top: 1.25rem;
+  }
+
+  .primaryButton,
+  .secondaryButton {
+    width: 100%;
+    padding: 0.88rem 0.9rem;
+    font-size: 0.94rem;
+  }
+}
