@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 18, "column": 0}, "map": {"version":3,"sources":["file:///E:/ll/frontend/app/page.tsx"],"sourcesContent":["import Hero from \"@/components/Home/Hero\";\nimport Welcome from \"@/components/Home/Welcome\";\n\nexport default function HomePage() {\n  return (\n    <main>\n      <Hero />\n      <Welcome />\n    </main>\n  );\n}"],"names":[],"mappings":";;;;;;;;;;;;;;;;;;AAGe,SAAS;IACtB,qBACE,0PAAC;;0BACC,0PAAC;;;;;0BACD,0PAAC;;;;;;;;;;;AAGP"}}]
+}

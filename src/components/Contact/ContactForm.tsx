@@ -1,10 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, SubmitHandler } from "react-hook-form";
 import styles from "./ContactForm.module.scss";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
+type ContactFormData = {
+  name: string;
+  phone: string;
+  subject: string;
+  message: string;
+};
 
 const ContactForm = () => {
   const {
@@ -12,11 +19,11 @@ const ContactForm = () => {
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm();
+  } = useForm<ContactFormData>();
 
   const [disabled, setDisabled] = useState(false);
 
-  const onSubmit = async (data) => {
+  const onSubmit: SubmitHandler<ContactFormData> = async (data) => {
     try {
       setDisabled(true);
 
@@ -34,6 +41,7 @@ const ContactForm = () => {
       const contentType = response.headers.get("content-type");
 
       let result;
+
       if (contentType && contentType.includes("application/json")) {
         result = await response.json();
       } else {
@@ -47,11 +55,15 @@ const ContactForm = () => {
 
       toast.success("Form submission was successful!");
       reset();
-    } catch (e) {
+    } catch (e: unknown) {
       console.error(e);
-      toast.error(
-        e.message || "Uh oh. Something went wrong while sending the message."
-      );
+
+      const message =
+        e instanceof Error
+          ? e.message
+          : "Uh oh. Something went wrong while sending the message.";
+
+      toast.error(message);
     } finally {
       setDisabled(false);
     }
@@ -65,6 +77,7 @@ const ContactForm = () => {
         <div className={styles.contactInfo}>
           <span className={styles.badge}>Get In Touch</span>
           <h2>Contact Us</h2>
+
           <p className={styles.infoIntro}>
             We are here to help. Please get in touch with us using the form or
             the contact details below. Whether it is bridal makeup, beauty
@@ -92,10 +105,11 @@ const ContactForm = () => {
             <form id="contact-form" onSubmit={handleSubmit(onSubmit)} noValidate>
               <div className={styles.formRow}>
                 <label className={styles.inputLabel}>Name</label>
+
                 <input
                   type="text"
                   {...register("name", {
-                    required: { value: true, message: "Please enter your name" },
+                    required: "Please enter your name",
                     maxLength: {
                       value: 30,
                       message: "Name must be 30 characters or less",
@@ -104,6 +118,7 @@ const ContactForm = () => {
                   className={styles.formControl}
                   placeholder="Enter your name"
                 />
+
                 {errors.name && (
                   <span className={styles.errorMessage}>
                     {errors.name.message}
@@ -113,13 +128,11 @@ const ContactForm = () => {
 
               <div className={styles.formRow}>
                 <label className={styles.inputLabel}>Phone Number</label>
+
                 <input
                   type="tel"
                   {...register("phone", {
-                    required: {
-                      value: true,
-                      message: "Please enter your phone number",
-                    },
+                    required: "Please enter your phone number",
                     pattern: {
                       value: /^[0-9]{10}$/,
                       message: "Please enter a valid 10-digit phone number",
@@ -128,6 +141,7 @@ const ContactForm = () => {
                   className={styles.formControl}
                   placeholder="Enter your phone number"
                 />
+
                 {errors.phone && (
                   <span className={styles.errorMessage}>
                     {errors.phone.message}
@@ -137,10 +151,11 @@ const ContactForm = () => {
 
               <div className={styles.formRow}>
                 <label className={styles.inputLabel}>Subject</label>
+
                 <input
                   type="text"
                   {...register("subject", {
-                    required: { value: true, message: "Please enter a subject" },
+                    required: "Please enter a subject",
                     maxLength: {
                       value: 75,
                       message: "Subject cannot exceed 75 characters",
@@ -149,6 +164,7 @@ const ContactForm = () => {
                   className={styles.formControl}
                   placeholder="Enter subject"
                 />
+
                 {errors.subject && (
                   <span className={styles.errorMessage}>
                     {errors.subject.message}
@@ -158,14 +174,16 @@ const ContactForm = () => {
 
               <div className={styles.formRow}>
                 <label className={styles.inputLabel}>Message</label>
+
                 <textarea
                   rows={4}
                   {...register("message", {
-                    required: { value: true, message: "Please enter a message" },
+                    required: "Please enter a message",
                   })}
                   className={`${styles.formControl} ${styles.textarea}`}
                   placeholder="Write your message here..."
                 />
+
                 {errors.message && (
                   <span className={styles.errorMessage}>
                     {errors.message.message}

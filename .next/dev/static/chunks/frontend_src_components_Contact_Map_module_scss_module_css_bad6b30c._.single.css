@@ -1,0 +1,27 @@
+/* [project]/frontend/src/components/Contact/Map.module.scss.module.css [app-client] (css) */
+.Map-module-scss-module__5j0l4W__mapContainer {
+  justify-content: center;
+  width: 100%;
+  margin-top: 30px;
+  padding: 20px;
+  display: flex;
+}
+
+.Map-module-scss-module__5j0l4W__mapIframe {
+  border-radius: 8px;
+  width: 100%;
+  height: 300px;
+  transition: box-shadow .3s;
+}
+
+.Map-module-scss-module__5j0l4W__mapIframe:hover {
+  box-shadow: 0 4px 15px green;
+}
+
+@media (max-width: 768px) {
+  .Map-module-scss-module__5j0l4W__mapIframe {
+    height: 300px;
+  }
+}
+
+/*# sourceMappingURL=frontend_src_components_Contact_Map_module_scss_module_css_bad6b30c._.single.css.map*/

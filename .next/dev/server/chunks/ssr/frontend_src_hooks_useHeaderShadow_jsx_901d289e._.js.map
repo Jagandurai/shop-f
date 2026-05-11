@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///E:/ll/frontend/src/hooks/useHeaderShadow.jsx"],"sourcesContent":["\"use client\";\r\n\r\nimport { useEffect, useState } from \"react\";\r\n\r\nconst useHeaderShadow = () => {\r\n  const [headerShadow, setHeaderShadow] = useState(\"none\");\r\n\r\n  useEffect(() => {\r\n    function handleScroll() {\r\n      if (window.scrollY > 0) {\r\n        setHeaderShadow(\r\n          \"rgba(0, 0, 0, 0.1) 0px 4px 6px -1px, rgba(0, 0, 0, 0.06) 0px 2px 4px -1px\"\r\n        );\r\n      } else {\r\n        setHeaderShadow(\"none\");\r\n      }\r\n    }\r\n\r\n    handleScroll(); // set initial shadow on load\r\n    window.addEventListener(\"scroll\", handleScroll);\r\n    return () => window.removeEventListener(\"scroll\", handleScroll);\r\n  }, []);\r\n\r\n  return headerShadow;\r\n};\r\n\r\nexport default useHeaderShadow;"],"names":[],"mappings":";;;;AAEA;AAFA;;AAIA,MAAM,kBAAkB;IACtB,MAAM,CAAC,cAAc,gBAAgB,GAAG,IAAA,6NAAQ,EAAC;IAEjD,IAAA,8NAAS,EAAC;QACR,SAAS;YACP,IAAI,OAAO,OAAO,GAAG,GAAG;gBACtB,gBACE;YAEJ,OAAO;gBACL,gBAAgB;YAClB;QACF;QAEA,gBAAgB,6BAA6B;QAC7C,OAAO,gBAAgB,CAAC,UAAU;QAClC,OAAO,IAAM,OAAO,mBAAmB,CAAC,UAAU;IACpD,GAAG,EAAE;IAEL,OAAO;AACT;uCAEe"}}]
+}

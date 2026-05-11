@@ -1,0 +1,176 @@
+/* [project]/frontend/src/components/Booking/AdvertisementPopup.module.scss.module.css [app-client] (css) */
+.AdvertisementPopup-module-scss-module__SmHoWa__overlay {
+  z-index: 3000;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  background: #1118278c;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+  display: flex;
+  position: fixed;
+  inset: 0;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__modal {
+  text-align: center;
+  background: linear-gradient(#fff 0%, #fff8fc 100%);
+  border: 1px solid #ec48991f;
+  border-radius: 24px;
+  outline: none;
+  width: 100%;
+  max-width: 520px;
+  padding: 2rem 1.5rem 1.5rem;
+  animation: .25s AdvertisementPopup-module-scss-module__SmHoWa__popupFadeIn;
+  position: relative;
+  box-shadow: 0 25px 60px #00000038;
+}
+
+@keyframes AdvertisementPopup-module-scss-module__SmHoWa__popupFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px)scale(.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0)scale(1);
+  }
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__closeButton {
+  color: #6b7280;
+  cursor: pointer;
+  background: #fff;
+  border: none;
+  border-radius: 999px;
+  width: 38px;
+  height: 38px;
+  font-size: 1.5rem;
+  line-height: 1;
+  transition: all .2s;
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  box-shadow: 0 8px 20px #00000014;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__closeButton:hover {
+  color: #111827;
+  transform: scale(1.05);
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__iconWrap {
+  background: linear-gradient(135deg, #fde7f3, #ffe9da);
+  border-radius: 999px;
+  justify-content: center;
+  align-items: center;
+  width: 74px;
+  height: 74px;
+  margin: 0 auto 1rem;
+  display: flex;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__icon {
+  font-size: 2rem;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__title {
+  color: #8b1c8f;
+  margin: 0 0 .75rem;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__description {
+  color: #4b5563;
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.8;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__actions {
+  gap: .85rem;
+  margin-top: 1.5rem;
+  display: flex;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__primaryButton, .AdvertisementPopup-module-scss-module__SmHoWa__secondaryButton {
+  cursor: pointer;
+  border: none;
+  border-radius: 14px;
+  flex: 1;
+  padding: .95rem 1rem;
+  font-size: .98rem;
+  font-weight: 700;
+  transition: all .2s;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__primaryButton {
+  color: #fff;
+  background: linear-gradient(90deg, #7b1fa2, #d81b60);
+  box-shadow: 0 10px 20px #d81b602e;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__primaryButton:hover {
+  transform: translateY(-1px);
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__secondaryButton {
+  color: #111827;
+  background: #f3f4f6;
+}
+
+.AdvertisementPopup-module-scss-module__SmHoWa__secondaryButton:hover {
+  background: #e5e7eb;
+}
+
+@media (max-width: 640px) {
+  .AdvertisementPopup-module-scss-module__SmHoWa__modal {
+    border-radius: 20px;
+    max-width: 100%;
+    padding: 1.7rem 1rem 1rem;
+  }
+
+  .AdvertisementPopup-module-scss-module__SmHoWa__closeButton {
+    width: 34px;
+    height: 34px;
+    font-size: 1.3rem;
+    top: 10px;
+    right: 10px;
+  }
+
+  .AdvertisementPopup-module-scss-module__SmHoWa__iconWrap {
+    width: 62px;
+    height: 62px;
+    margin-bottom: .85rem;
+  }
+
+  .AdvertisementPopup-module-scss-module__SmHoWa__icon {
+    font-size: 1.7rem;
+  }
+
+  .AdvertisementPopup-module-scss-module__SmHoWa__title {
+    font-size: 1.45rem;
+  }
+
+  .AdvertisementPopup-module-scss-module__SmHoWa__description {
+    font-size: .95rem;
+    line-height: 1.65;
+  }
+
+  .AdvertisementPopup-module-scss-module__SmHoWa__actions {
+    flex-direction: column;
+    gap: .7rem;
+    margin-top: 1.25rem;
+  }
+
+  .AdvertisementPopup-module-scss-module__SmHoWa__primaryButton, .AdvertisementPopup-module-scss-module__SmHoWa__secondaryButton {
+    width: 100%;
+    padding: .88rem .9rem;
+    font-size: .94rem;
+  }
+}
+
+/*# sourceMappingURL=ceffb_src_components_Booking_AdvertisementPopup_module_scss_module_css_bad6b30c._.single.css.map*/

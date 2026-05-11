@@ -1,0 +1,74 @@
+/* [project]/frontend/src/components/Contact/hero.module.scss.module.css [app-client] (css) */
+.hero-module-scss-module__3cX4mq__heroBanner {
+  width: 100%;
+  height: 70vh;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (max-width: 1024px) {
+  .hero-module-scss-module__3cX4mq__heroBanner {
+    height: 50vh;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-module-scss-module__3cX4mq__heroBanner {
+    height: 40vh;
+  }
+}
+
+.hero-module-scss-module__3cX4mq__heroImage {
+  z-index: 1;
+  background-image: url("https://res.cloudinary.com/dtiaycw2o/image/upload/v1756199685/contact-hero_mfzvda.webp");
+  background-position: center;
+  background-size: cover;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+.hero-module-scss-module__3cX4mq__heroBanner:before {
+  content: "";
+  z-index: 2;
+  background-color: #b40bb428;
+  position: absolute;
+  inset: 0;
+}
+
+.hero-module-scss-module__3cX4mq__heroContent {
+  z-index: 3;
+  color: #fff;
+  text-align: center;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  display: flex;
+  position: absolute;
+  inset: 0;
+}
+
+.hero-module-scss-module__3cX4mq__heroContent h1 {
+  margin-bottom: 15px;
+  font-size: 52px;
+  font-weight: bold;
+}
+
+.hero-module-scss-module__3cX4mq__heroContent p {
+  max-width: 600px;
+  font-size: 18px;
+}
+
+@media (max-width: 768px) {
+  .hero-module-scss-module__3cX4mq__heroContent h1 {
+    font-size: 38px;
+  }
+
+  .hero-module-scss-module__3cX4mq__heroContent p {
+    font-size: 15px;
+  }
+}
+
+/*# sourceMappingURL=frontend_src_components_Contact_hero_module_scss_module_css_bad6b30c._.single.css.map*/
