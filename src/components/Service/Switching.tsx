@@ -131,7 +131,8 @@ const TAB_DEFAULT_OPTION: Record<TabType, string> = {
 
 const Switching = () => {
   const [activeTab, setActiveTab] = useState<TabType>("hair");
-  const [activeOption, setActiveOption] = useState<string>("haircuts");
+  const [activeOption, setActiveOption] = useState(TAB_DEFAULT_OPTION.hair);
+
   const { openForm } = useBookingContext();
 
   const handleTabClick = (tab: TabType) => {
@@ -158,10 +159,10 @@ const Switching = () => {
         </div>
 
         <nav className={styles.tabs} aria-label="Service categories">
-          {Object.keys(tabContent).map((tab) => (
+          {(Object.keys(tabContent) as TabType[]).map((tab) => (
             <button
               key={tab}
-              onClick={() => handleTabClick(tab as TabType)}
+              onClick={() => handleTabClick(tab)}
               className={activeTab === tab ? styles.active : ""}
               aria-pressed={activeTab === tab}
             >
@@ -172,18 +173,18 @@ const Switching = () => {
 
         <div className={styles.contentContainer}>
           <nav className={styles.leftOptions} aria-label="Service options">
-            {Object.keys(tabContent[activeTab]).map((option) => (
+            {(
+              Object.keys(tabContent[activeTab]) as Array<
+                keyof (typeof tabContent)[typeof activeTab]
+              >
+            ).map((option) => (
               <button
-                key={option}
-                onClick={() => setActiveOption(option)}
+                key={String(option)}
+                onClick={() => setActiveOption(String(option))}
                 className={activeOption === option ? styles.active : ""}
                 aria-pressed={activeOption === option}
               >
-                {
-                  tabContent[activeTab][
-                    option as keyof (typeof tabContent)[typeof activeTab]
-                  ].title
-                }
+                {tabContent[activeTab][option].title}
               </button>
             ))}
           </nav>
