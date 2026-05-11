@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["turbopack:///E:/ll/frontend/src/components/Gallery/Hero.module.scss"],"sourcesContent":[".heroBanner {\r\n  position: relative;\r\n  width: 100%;\r\n  height: 80vh;\r\n\r\n  @media (max-width: 1024px) {\r\n    height: 50vh;\r\n  }\r\n\r\n  @media (max-width: 768px) {\r\n    height: 40vh;\r\n  }\r\n}\r\n\r\n.heroImage {\r\n  background-image: url(\"https://res.cloudinary.com/dtiaycw2o/image/upload/v1756199688/gallery-hero_pd7p46.webp\");\r\n  background-size: cover;\r\n  background-position: center;\r\n  width: 100%;\r\n  height: 100%;\r\n  position: absolute;\r\n  top: 0;\r\n  left: 0;\r\n  z-index: 1;\r\n}"],"names":[],"mappings":"AAAA;;;;;;AAKE;EALF;;;;;AASE;EATF;;;;;AAcA"}}]
-}
