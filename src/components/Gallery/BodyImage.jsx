@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { GoogleLogin, googleLogout } from "@react-oauth/google";
+import { GoogleLogin, googleLogout, useGoogleLogin } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
 import { ToastContainer, toast } from "react-toastify";
 import {
@@ -98,6 +98,10 @@ export default function BodyImage() {
   const requestIdRef = useRef(0);
   const isFetchingRef = useRef(false);
   const favoriteIdsRef = useRef([]);
+
+  // what the visitor tried to do before logging in (done automatically after login)
+  const pendingFavoriteImageRef = useRef(null);
+  const openLikedAfterLoginRef = useRef(false);
 
   const [galleryImages, setGalleryImages] = useState([]);
   const [totalImages, setTotalImages] = useState(0);
@@ -594,31 +598,99 @@ export default function BodyImage() {
     }
   };
 
+  /**
+   * Shared login finish (used by the top Google button AND the popup that
+   * opens when a logged-out visitor taps a heart / the Liked tab).
+   */
+  const completeLogin = async (email) => {
+    let admin = false;
+
+    try {
+      const res = await axios.post(`${API_BASE_URL}/check-admin`, { email });
+      admin = Boolean(res.data?.success);
+    } catch (error) {
+      console.error("Admin check error:", error);
+    }
+
+    // If they tapped a heart before logging in, save that like NOW,
+    // before favourites are loaded, so it shows up filled right away.
+    const pendingImage = pendingFavoriteImageRef.current;
+    pendingFavoriteImageRef.current = null;
+
+    if (pendingImage) {
+      const pendingId = getImageId(pendingImage);
+
+      try {
+        await axios.post(`${API_BASE_URL}/${pendingId}/favorite`, null, {
+          headers: { "x-user-email": email },
+        });
+        toast.success("Added to favourites");
+      } catch (error) {
+        // 409 = already liked earlier, that's fine
+        if (error.response?.status !== 409) {
+          console.error("Pending favourite error:", error);
+          toast.error("Failed to update favourite");
+        }
+      }
+    }
+
+    localStorage.setItem("isLoggedIn", "true");
+    localStorage.setItem("userEmail", email);
+
+    setIsAdmin(admin);
+    setUserEmail(email);
+    setIsLoggedIn(true);
+
+    toast.success(`Welcome: ${email}`);
+  };
+
+  // Top "Sign in with Google" button (returns an ID token)
   const handleLoginSuccess = async (credentialResponse) => {
     try {
       const decoded = jwtDecode(credentialResponse.credential);
-      const email = decoded.email;
-
-      setIsLoggedIn(true);
-      setUserEmail(email);
-
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userEmail", email);
-
-      const res = await axios.post(`${API_BASE_URL}/check-admin`, { email });
-
-      if (res.data?.success) {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
-
-      toast.success(`Welcome: ${email}`);
-      // favourites are loaded automatically by the loadFavorites effect
+      await completeLogin(decoded.email);
     } catch (error) {
       console.error("JWT/Login error:", error);
       toast.error("Failed to process login.");
     }
+  };
+
+  // Opens the Google login popup from anywhere on the page (no need to scroll up)
+  const googleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      try {
+        const { data } = await axios.get(
+          "https://www.googleapis.com/oauth2/v3/userinfo",
+          { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
+        );
+
+        if (!data?.email) throw new Error("No email returned by Google");
+
+        await completeLogin(data.email);
+      } catch (error) {
+        console.error("Google popup login error:", error);
+        pendingFavoriteImageRef.current = null;
+        openLikedAfterLoginRef.current = false;
+        toast.error("Failed to process login.");
+      }
+    },
+    onError: () => {
+      pendingFavoriteImageRef.current = null;
+      openLikedAfterLoginRef.current = false;
+      toast.error("Google Login Failed");
+    },
+    // popup closed by the visitor
+    onNonOAuthError: () => {
+      pendingFavoriteImageRef.current = null;
+      openLikedAfterLoginRef.current = false;
+    },
+  });
+
+  const startGoogleLogin = ({ favoriteImage = null, openLiked = false } = {}) => {
+    pendingFavoriteImageRef.current = favoriteImage;
+    openLikedAfterLoginRef.current = openLiked;
+    toast.info("Please sign in with Google to continue");
+    googleLogin();
   };
 
   const handleLogout = (showToast = true) => {
@@ -654,7 +726,13 @@ export default function BodyImage() {
       });
 
       const imageIds = res.data?.data || [];
+      favoriteIdsRef.current = imageIds; // ready before the Liked tab fetches
       setFavoriteIds(imageIds);
+
+      if (openLikedAfterLoginRef.current) {
+        openLikedAfterLoginRef.current = false;
+        setTypeFilter("liked");
+      }
     } catch (error) {
       console.error("Error loading favorites:", error);
       setFavoriteIds([]);
@@ -679,7 +757,8 @@ export default function BodyImage() {
     event.stopPropagation();
 
     if (!isLoggedIn) {
-      toast.info("Please log in to favourite images");
+      // open Google login right here; the like is saved automatically after login
+      startGoogleLogin({ favoriteImage: image });
       return;
     }
 
@@ -894,7 +973,7 @@ export default function BodyImage() {
           <button
             onClick={() => {
               if (!isLoggedIn) {
-                toast.info("Please log in to view your liked images");
+                startGoogleLogin({ openLiked: true });
                 return;
               }
               setTypeFilter("liked");
@@ -1060,7 +1139,7 @@ export default function BodyImage() {
                 className={styles.previewImage}
               />
 
-              {isLoggedIn && currentPreviewImage && (
+              {currentPreviewImage && (
                 <button
                   className={styles.previewFavoriteButton}
                   onClick={(e) => {
