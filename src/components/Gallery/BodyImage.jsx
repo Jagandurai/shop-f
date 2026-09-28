@@ -6,7 +6,13 @@ import { useRouter } from "next/navigation";
 import { GoogleLogin, googleLogout } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
 import { ToastContainer, toast } from "react-toastify";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Heart,
+  SlidersHorizontal,
+} from "lucide-react";
 import { useSwipeable } from "react-swipeable";
 import styles from "./BodyImage.module.scss";
 import "react-toastify/dist/ReactToastify.css";
@@ -16,6 +22,32 @@ const ITEMS_PER_PAGE = 30;
 const MOBILE_BREAKPOINT = 768;
 const PIN_ICON_URL =
   "https://img.icons8.com/?size=100&id=2EuI26KqYJ6b&format=png&color=000000";
+
+const getImageId = (image) => image?.id || image?._id;
+
+/**
+ * Sharp gallery images.
+ * If the image is hosted on Cloudinary, ask for a high-quality version at a
+ * size that matches the screen (retina phones/laptops get a bigger file).
+ * Any other host is returned unchanged.
+ */
+const GALLERY_WIDTHS = [600, 900, 1400];
+const GALLERY_SIZES = "(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw";
+
+const isCloudinaryUrl = (url) =>
+  typeof url === "string" &&
+  url.includes("res.cloudinary.com") &&
+  /\/upload\/v\d+\//.test(url); // only when no transformation is set yet
+
+const getGalleryImageUrl = (url, width) =>
+  isCloudinaryUrl(url)
+    ? url.replace("/upload/", `/upload/c_limit,w_${width},q_auto:best,f_auto/`)
+    : url;
+
+const getGallerySrcSet = (url) =>
+  isCloudinaryUrl(url)
+    ? GALLERY_WIDTHS.map((w) => `${getGalleryImageUrl(url, w)} ${w}w`).join(", ")
+    : undefined;
 
 const shuffleArray = (array) => {
   const shuffled = [...array];
@@ -28,17 +60,44 @@ const shuffleArray = (array) => {
   return shuffled;
 };
 
-const reorderGalleryImages = (images) => {
+/**
+ * Pinned images always come first.
+ * Order of everything else is kept EXACTLY as it is (stable),
+ * unless `shuffle` is true (only used for a fresh first-page load).
+ * This is what stops old images from jumping around.
+ */
+const reorderGalleryImages = (images, shuffle = false) => {
   const pinnedImages = images.filter((image) => Boolean(image?.isPinned));
   const regularImages = images.filter((image) => !image?.isPinned);
 
-  return [...pinnedImages, ...shuffleArray(regularImages)];
+  return [
+    ...pinnedImages,
+    ...(shuffle ? shuffleArray(regularImages) : regularImages),
+  ];
+};
+
+const parsePagination = (res, fallbackPage) => {
+  const pagination = res.data?.pagination || {};
+  const totalPages = Number(pagination.pages || 0);
+  const resolvedPage = Number(pagination.page || fallbackPage);
+  const resolvedTotal = Number(pagination.total || 0);
+  const resolvedHasNextPage =
+    typeof pagination.hasNextPage === "boolean"
+      ? pagination.hasNextPage
+      : resolvedPage < totalPages;
+
+  return { resolvedPage, resolvedTotal, resolvedHasNextPage };
 };
 
 export default function BodyImage() {
   const router = useRouter();
   const loadMoreRef = useRef(null);
   const observerRef = useRef(null);
+
+  // Guards against duplicate / stale requests
+  const requestIdRef = useRef(0);
+  const isFetchingRef = useRef(false);
+  const favoriteIdsRef = useRef([]);
 
   const [galleryImages, setGalleryImages] = useState([]);
   const [totalImages, setTotalImages] = useState(0);
@@ -56,6 +115,12 @@ export default function BodyImage() {
   const [userEmail, setUserEmail] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
+  const [favoriteOperationPending, setFavoriteOperationPending] = useState(
+    new Set()
+  );
+
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedType, setSelectedType] = useState("");
 
@@ -65,6 +130,12 @@ export default function BodyImage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [columnCount, setColumnCount] = useState(4);
+
+  // keep latest favourites in a ref so fetching never depends on them
+  useEffect(() => {
+    favoriteIdsRef.current = favoriteIds;
+  }, [favoriteIds]);
 
   useEffect(() => {
     const storedLogin = localStorage.getItem("isLoggedIn");
@@ -75,11 +146,21 @@ export default function BodyImage() {
       setUserEmail(storedEmail);
       checkIfAdmin(storedEmail);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const checkScreen = () => {
-      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+      const width = window.innerWidth;
+      setIsMobile(width <= MOBILE_BREAKPOINT);
+
+      if (width <= 768) {
+        setColumnCount(2);
+      } else if (width <= 1024) {
+        setColumnCount(3);
+      } else {
+        setColumnCount(4);
+      }
     };
 
     checkScreen();
@@ -88,8 +169,41 @@ export default function BodyImage() {
     return () => window.removeEventListener("resize", checkScreen);
   }, []);
 
+  /**
+   * Liked filter: the backend has no "liked" endpoint filter, so we walk
+   * all pages once and keep only favourited images.
+   */
+  const fetchAllLikedImages = useCallback(async () => {
+    let page = 1;
+    let hasMore = true;
+    let all = [];
+
+    while (hasMore && page <= 100) {
+      const res = await axios.get(API_BASE_URL, {
+        params: { page, limit: ITEMS_PER_PAGE, sort: sortOrder },
+      });
+
+      const data = Array.isArray(res.data?.data) ? res.data.data : [];
+      const { resolvedHasNextPage } = parsePagination(res, page);
+
+      all = [...all, ...data];
+      hasMore = resolvedHasNextPage;
+      page += 1;
+    }
+
+    return all.filter((image) =>
+      favoriteIdsRef.current.includes(getImageId(image))
+    );
+  }, [sortOrder]);
+
   const fetchImages = useCallback(
     async ({ page = 1, append = false } = {}) => {
+      // ignore duplicate "load more" calls while one is running
+      if (append && isFetchingRef.current) return;
+
+      const requestId = ++requestIdRef.current;
+      isFetchingRef.current = true;
+
       try {
         if (append) {
           setIsFetchingMore(true);
@@ -97,6 +211,19 @@ export default function BodyImage() {
           setIsLoading(true);
         }
 
+        // ---------- LIKED ----------
+        if (typeFilter === "liked") {
+          const liked = await fetchAllLikedImages();
+          if (requestId !== requestIdRef.current) return;
+
+          setGalleryImages(reorderGalleryImages(liked));
+          setCurrentPage(1);
+          setTotalImages(liked.length);
+          setHasNextPage(false);
+          return;
+        }
+
+        // ---------- NORMAL ----------
         const params = {
           page,
           limit: ITEMS_PER_PAGE,
@@ -108,57 +235,68 @@ export default function BodyImage() {
         }
 
         const res = await axios.get(API_BASE_URL, { params });
+        if (requestId !== requestIdRef.current) return;
 
         const data = Array.isArray(res.data?.data) ? res.data.data : [];
-        const pagination = res.data?.pagination || {};
-        const totalPages = Number(pagination.pages || 0);
-        const resolvedPage = Number(pagination.page || page);
-        const resolvedTotal = Number(pagination.total || 0);
-        const resolvedHasNextPage =
-          typeof pagination.hasNextPage === "boolean"
-            ? pagination.hasNextPage
-            : resolvedPage < totalPages;
+        const { resolvedPage, resolvedTotal, resolvedHasNextPage } =
+          parsePagination(res, page);
 
         setGalleryImages((prev) => {
-          const mergedImages = append ? [...prev, ...data] : data;
-          return reorderGalleryImages(mergedImages);
+          if (!append) {
+            // shuffle only on a fresh first-page load
+            return reorderGalleryImages(data, true);
+          }
+
+          // APPEND ONLY: old images keep their exact position
+          const existingIds = new Set(prev.map(getImageId));
+          const newImages = data.filter(
+            (image) => !existingIds.has(getImageId(image))
+          );
+
+          return [...prev, ...newImages];
         });
 
         setCurrentPage(resolvedPage);
         setTotalImages(resolvedTotal);
         setHasNextPage(resolvedHasNextPage);
       } catch (error) {
+        if (requestId !== requestIdRef.current) return;
+
         console.error("Error fetching images:", error);
         toast.error("Failed to load gallery");
+
         if (!append) {
           setGalleryImages([]);
           setTotalImages(0);
         }
         setHasNextPage(false);
       } finally {
-        setIsLoading(false);
-        setIsFetchingMore(false);
+        if (requestId === requestIdRef.current) {
+          isFetchingRef.current = false;
+          setIsLoading(false);
+          setIsFetchingMore(false);
+        }
       }
     },
-    [sortOrder, typeFilter]
+    [sortOrder, typeFilter, fetchAllLikedImages]
   );
 
   const resetAndFetchImages = useCallback(async () => {
-    setGalleryImages([]);
+    isFetchingRef.current = false;
     setCurrentPage(1);
-    setTotalImages(0);
     setHasNextPage(false);
     await fetchImages({ page: 1, append: false });
   }, [fetchImages]);
 
+  // Runs ONLY when the filter or sort changes (not when favourites change)
   useEffect(() => {
     resetAndFetchImages();
   }, [resetAndFetchImages]);
 
   const loadMoreImages = useCallback(async () => {
-    if (isLoading || isFetchingMore || !hasNextPage) return;
+    if (isLoading || isFetchingRef.current || !hasNextPage) return;
     await fetchImages({ page: currentPage + 1, append: true });
-  }, [currentPage, fetchImages, hasNextPage, isFetchingMore, isLoading]);
+  }, [currentPage, fetchImages, hasNextPage, isLoading]);
 
   useEffect(() => {
     if (!isMobile) return;
@@ -211,6 +349,7 @@ export default function BodyImage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewImage, previewImageIndex, galleryImages]);
 
   const checkIfAdmin = async (email) => {
@@ -321,7 +460,7 @@ export default function BodyImage() {
   };
 
   const handleImageDelete = async (image) => {
-    const imageId = image?.id || image?._id;
+    const imageId = getImageId(image);
 
     if (!imageId) {
       toast.error("Invalid image id");
@@ -336,9 +475,7 @@ export default function BodyImage() {
       });
 
       setGalleryImages((prev) =>
-        reorderGalleryImages(
-          prev.filter((img) => (img.id || img._id) !== imageId)
-        )
+        reorderGalleryImages(prev.filter((img) => getImageId(img) !== imageId))
       );
 
       setTotalImages((prev) => Math.max(prev - 1, 0));
@@ -352,7 +489,7 @@ export default function BodyImage() {
 
   const handleUpdateImageType = async () => {
     const image = previewImages[previewImageIndex];
-    const imageId = image?.id || image?._id;
+    const imageId = getImageId(image);
 
     if (!imageId) {
       toast.error("Invalid image id");
@@ -374,21 +511,28 @@ export default function BodyImage() {
 
       const updatedImage = res.data?.data;
 
-      setGalleryImages((prev) =>
-        reorderGalleryImages(
+      toast.success("Image type updated successfully");
+
+      const noLongerMatchesFilter =
+        typeFilter !== "all" &&
+        typeFilter !== "liked" &&
+        updatedImage?.type !== typeFilter;
+
+      if (noLongerMatchesFilter) {
+        // remove it in place (no refetch, no reshuffle)
+        setGalleryImages((prev) =>
+          prev.filter((img) => getImageId(img) !== imageId)
+        );
+        setTotalImages((prev) => Math.max(prev - 1, 0));
+        closePreview();
+      } else {
+        setGalleryImages((prev) =>
           prev.map((img) =>
-            (img.id || img._id) === imageId
+            getImageId(img) === imageId
               ? { ...img, type: updatedImage.type }
               : img
           )
-        )
-      );
-
-      toast.success("Image type updated successfully");
-
-      if (typeFilter !== "all" && previewType !== typeFilter) {
-        closePreview();
-        await resetAndFetchImages();
+        );
       }
     } catch (error) {
       console.error("Update type error:", error);
@@ -400,7 +544,7 @@ export default function BodyImage() {
 
   const handleTogglePin = async () => {
     const image = previewImages[previewImageIndex];
-    const imageId = image?.id || image?._id;
+    const imageId = getImageId(image);
 
     if (!imageId) {
       toast.error("Invalid image id");
@@ -423,30 +567,25 @@ export default function BodyImage() {
       );
 
       const updatedImage = res.data?.data;
+      const isNowPinned = Boolean(updatedImage?.isPinned);
 
-      setPreviewPinned(Boolean(updatedImage?.isPinned));
+      setPreviewPinned(isNowPinned);
 
+      // update in place + stable reorder (no refetch, no random shuffle)
       setGalleryImages((prev) =>
         reorderGalleryImages(
           prev.map((img) =>
-            (img.id || img._id) === imageId
-              ? { ...img, isPinned: Boolean(updatedImage?.isPinned) }
-              : img
+            getImageId(img) === imageId ? { ...img, isPinned: isNowPinned } : img
           )
         )
       );
 
       toast.success(
-        updatedImage?.isPinned
-          ? "Image pinned successfully"
-          : "Image unpinned successfully"
+        isNowPinned ? "Image pinned successfully" : "Image unpinned successfully"
       );
 
-      await resetAndFetchImages();
-
-      if (typeFilter !== "all" && updatedImage?.type !== typeFilter) {
-        closePreview();
-      }
+      // the image moved, so close the preview to avoid showing the wrong one
+      closePreview();
     } catch (error) {
       console.error("Pin update error:", error);
       toast.error("Failed to update pin status");
@@ -470,11 +609,12 @@ export default function BodyImage() {
 
       if (res.data?.success) {
         setIsAdmin(true);
-        toast.success(`Welcome: ${email}`);
       } else {
-        handleLogout(false);
-        toast.error("You are not an admin");
+        setIsAdmin(false);
       }
+
+      toast.success(`Welcome: ${email}`);
+      // favourites are loaded automatically by the loadFavorites effect
     } catch (error) {
       console.error("JWT/Login error:", error);
       toast.error("Failed to process login.");
@@ -488,9 +628,118 @@ export default function BodyImage() {
     setIsLoggedIn(false);
     setUserEmail("");
     setIsAdmin(false);
+    setFavoriteIds([]);
+
+    if (typeFilter === "liked") {
+      setTypeFilter("all");
+    }
 
     if (showToast) {
       toast.info("Logged out successfully");
+    }
+  };
+
+  const loadFavorites = useCallback(async () => {
+    if (!isLoggedIn || !userEmail) {
+      setFavoriteIds([]);
+      return;
+    }
+
+    try {
+      setIsLoadingFavorites(true);
+      const res = await axios.get(`${API_BASE_URL}/favorites`, {
+        headers: {
+          "x-user-email": userEmail,
+        },
+      });
+
+      const imageIds = res.data?.data || [];
+      setFavoriteIds(imageIds);
+    } catch (error) {
+      console.error("Error loading favorites:", error);
+      setFavoriteIds([]);
+    } finally {
+      setIsLoadingFavorites(false);
+    }
+  }, [isLoggedIn, userEmail]);
+
+  useEffect(() => {
+    loadFavorites();
+  }, [loadFavorites]);
+
+  const isFavorite = useCallback(
+    (image) => {
+      const imageId = getImageId(image);
+      return favoriteIds.includes(imageId);
+    },
+    [favoriteIds]
+  );
+
+  const handleFavoriteToggle = async (image, event) => {
+    event.stopPropagation();
+
+    if (!isLoggedIn) {
+      toast.info("Please log in to favourite images");
+      return;
+    }
+
+    const imageId = getImageId(image);
+    if (!imageId) {
+      toast.error("Invalid image");
+      return;
+    }
+
+    if (favoriteOperationPending.has(imageId)) {
+      return;
+    }
+
+    setFavoriteOperationPending((prev) => new Set(prev).add(imageId));
+
+    try {
+      const currentlyFavorited = isFavorite(image);
+
+      if (currentlyFavorited) {
+        await axios.delete(`${API_BASE_URL}/${imageId}/favorite`, {
+          headers: {
+            "x-user-email": userEmail,
+          },
+        });
+        setFavoriteIds((prev) => prev.filter((id) => id !== imageId));
+
+        // in the Liked tab, remove it from the grid right away
+        if (typeFilter === "liked") {
+          setGalleryImages((prev) =>
+            prev.filter((img) => getImageId(img) !== imageId)
+          );
+          setTotalImages((prev) => Math.max(prev - 1, 0));
+          closePreview();
+        }
+
+        toast.success("Removed from favourites");
+      } else {
+        await axios.post(`${API_BASE_URL}/${imageId}/favorite`, null, {
+          headers: {
+            "x-user-email": userEmail,
+          },
+        });
+        setFavoriteIds((prev) => [...prev, imageId]);
+        toast.success("Added to favourites");
+      }
+    } catch (error) {
+      console.error("Favorite toggle error:", error);
+      if (error.response?.status === 409) {
+        toast.error("Already in favourites");
+      } else if (error.response?.status === 404) {
+        toast.error("Image not found");
+      } else {
+        toast.error("Failed to update favourite");
+      }
+    } finally {
+      setFavoriteOperationPending((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(imageId);
+        return newSet;
+      });
     }
   };
 
@@ -550,6 +799,9 @@ export default function BodyImage() {
     trackMouse: true,
   });
 
+  const currentPreviewImage =
+    previewImageIndex !== null ? previewImages[previewImageIndex] : null;
+
   return (
     <div className={styles.galleryContainer}>
       <p className={styles.description}>
@@ -566,6 +818,14 @@ export default function BodyImage() {
             onSuccess={handleLoginSuccess}
             onError={() => toast.error("Google Login Failed")}
           />
+        </div>
+      )}
+
+      {isLoggedIn && !isAdmin && (
+        <div className={styles.userActions}>
+          <button onClick={() => handleLogout()} className={styles.logoutButton}>
+            Logout
+          </button>
         </div>
       )}
 
@@ -605,7 +865,7 @@ export default function BodyImage() {
             Upload Files
           </button>
 
-          <button onClick={handleLogout} className={styles.logoutButton}>
+          <button onClick={() => handleLogout()} className={styles.logoutButton}>
             Logout
           </button>
         </div>
@@ -631,57 +891,119 @@ export default function BodyImage() {
           >
             Hairstyle
           </button>
+          <button
+            onClick={() => {
+              if (!isLoggedIn) {
+                toast.info("Please log in to view your liked images");
+                return;
+              }
+              setTypeFilter("liked");
+            }}
+            className={typeFilter === "liked" ? styles.active : ""}
+          >
+            Liked
+          </button>
         </div>
 
-        <div className={styles.sortWrapper}>
-          <select
-            id="sort"
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value)}
-            className={styles.sortSelect}
-          >
-            <option value="latest">Latest</option>
-            <option value="oldest">Oldest</option>
-          </select>
+        <div className={styles.toolbarMeta}>
+          {!isLoading && totalImages > 0 && (
+            <div className={styles.galleryStats}>
+              {galleryImages.length >= totalImages
+                ? `Showing all ${totalImages} images`
+                : `Showing ${galleryImages.length} of ${totalImages} images`}
+            </div>
+          )}
+
+          <div className={styles.sortWrapper}>
+            <SlidersHorizontal size={14} className={styles.sortIcon} />
+            <select
+              id="sort"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className={styles.sortSelect}
+              aria-label="Sort images"
+            >
+              <option value="latest">Latest</option>
+              <option value="oldest">Oldest</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      {!isLoading && totalImages > 0 && (
-        <div className={styles.galleryStats}>
-          {galleryImages.length >= totalImages
-            ? `Showing all ${totalImages} images`
-            : `Showing ${galleryImages.length} of ${totalImages} images`}
-        </div>
-      )}
-
-      <div className={styles.gallery}>
+      {/* Single CSS grid: images fill row by row (1 2 / 3 4 / 5 6 ...) */}
+      <div className={styles.gallery} style={{ "--column-count": columnCount }}>
         {isLoading ? (
-          Array.from({ length: 8 }).map((_, index) => (
-            <div key={index} className={styles.skeletonItem}></div>
+          Array.from({ length: columnCount * 2 }).map((_, index) => (
+            <div key={`skeleton-${index}`} className={styles.skeletonItem} />
           ))
         ) : galleryImages.length > 0 ? (
-          galleryImages.map((image, index) => (
-            <div className={styles.item} key={image.id || image._id || index}>
-              {image.isPinned && (
-                <div className={styles.pinnedBadge}>
-                  <img src={PIN_ICON_URL} alt="Pinned" />
-                </div>
-              )}
+          <>
+            {galleryImages.map((image, index) => {
+              const imageId = getImageId(image);
 
-              <img
-                src={image.image_url}
-                alt={
-                  image.type
-                    ? `${image.type} gallery image ${index + 1}`
-                    : `Gallery image ${index + 1}`
-                }
-                onClick={() => handleImageClick(index)}
-                loading="lazy"
-              />
-            </div>
-          ))
+              return (
+                <div className={styles.item} key={imageId || index}>
+                  {image.isPinned && (
+                    <div className={styles.pinnedBadge}>
+                      <img src={PIN_ICON_URL} alt="Pinned" />
+                    </div>
+                  )}
+
+                  <button
+                    className={styles.favoriteButton}
+                    onClick={(e) => handleFavoriteToggle(image, e)}
+                    aria-label={
+                      isFavorite(image)
+                        ? "Remove from favourites"
+                        : "Add to favourites"
+                    }
+                    title={
+                      isFavorite(image)
+                        ? "Remove from favourites"
+                        : "Add to favourites"
+                    }
+                    disabled={favoriteOperationPending.has(imageId)}
+                  >
+                    <Heart
+                      size={20}
+                      fill={isFavorite(image) ? "#e91e63" : "none"}
+                      color={isFavorite(image) ? "#e91e63" : "#000"}
+                      strokeWidth={isFavorite(image) ? 0 : 2}
+                    />
+                  </button>
+
+                  <img
+                    src={getGalleryImageUrl(image.image_url, 900)}
+                    srcSet={getGallerySrcSet(image.image_url)}
+                    sizes={GALLERY_SIZES}
+                    decoding="async"
+                    alt={
+                      image.type
+                        ? `${image.type} gallery image ${index + 1}`
+                        : `Gallery image ${index + 1}`
+                    }
+                    onClick={() => handleImageClick(index)}
+                    loading="lazy"
+                  />
+                </div>
+              );
+            })}
+
+            {/* placeholders at the bottom while the next page loads */}
+            {isFetchingMore &&
+              Array.from({ length: columnCount }).map((_, index) => (
+                <div
+                  key={`loading-more-${index}`}
+                  className={styles.skeletonItem}
+                />
+              ))}
+          </>
         ) : (
-          <p className={styles.noImages}>No images found for the selected filter.</p>
+          <p className={styles.noImages}>
+            {typeFilter === "liked"
+              ? "You haven't liked any images yet."
+              : "No images found for the selected filter."}
+          </p>
         )}
       </div>
 
@@ -721,14 +1043,14 @@ export default function BodyImage() {
             onClick={(e) => e.stopPropagation()}
           >
             <button className={styles.closeButton} onClick={closePreview}>
-              <X size={24} />
+              <X size={18} />
             </button>
 
             <button
               className={`${styles.arrow} ${styles.leftArrow}`}
               onClick={prevImage}
             >
-              <ChevronLeft size={28} />
+              <ChevronLeft size={20} />
             </button>
 
             <div className={styles.previewContent}>
@@ -738,7 +1060,37 @@ export default function BodyImage() {
                 className={styles.previewImage}
               />
 
-              {isLoggedIn && isAdmin && previewImageIndex !== null && (
+              {isLoggedIn && currentPreviewImage && (
+                <button
+                  className={styles.previewFavoriteButton}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleFavoriteToggle(currentPreviewImage, e);
+                  }}
+                  aria-label={
+                    isFavorite(currentPreviewImage)
+                      ? "Remove from favourites"
+                      : "Add to favourites"
+                  }
+                  title={
+                    isFavorite(currentPreviewImage)
+                      ? "Remove from favourites"
+                      : "Add to favourites"
+                  }
+                  disabled={favoriteOperationPending.has(
+                    getImageId(currentPreviewImage)
+                  )}
+                >
+                  <Heart
+                    size={18}
+                    fill={isFavorite(currentPreviewImage) ? "#e91e63" : "none"}
+                    color={isFavorite(currentPreviewImage) ? "#e91e63" : "#fff"}
+                    strokeWidth={isFavorite(currentPreviewImage) ? 0 : 2}
+                  />
+                </button>
+              )}
+
+              {isLoggedIn && isAdmin && currentPreviewImage && (
                 <div className={styles.typeEditor}>
                   <select
                     value={previewType}
@@ -777,15 +1129,15 @@ export default function BodyImage() {
                     className={styles.deleteIcon}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleImageDelete(previewImages[previewImageIndex]);
+                      handleImageDelete(currentPreviewImage);
                     }}
                     aria-label="Delete image"
                     type="button"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
+                      width="14"
+                      height="14"
                       viewBox="0 0 24 24"
                       fill="black"
                     >
