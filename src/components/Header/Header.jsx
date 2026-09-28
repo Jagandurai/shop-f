@@ -67,9 +67,9 @@ const getAvatarLetter = (email) => {
 export default function Navbar({
   isLoggedIn = false,
   userEmail = "",
-  onLoginClick,
-  onLogoutClick,
-  onLikedClick,
+  onLoginClick = () => {},
+  onLogoutClick = () => {},
+  onLikedClick = () => {},
 }) {
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
