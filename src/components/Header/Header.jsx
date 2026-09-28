@@ -454,6 +454,8 @@ export default function Navbar({
         </div>
       </header>
 
+       <div className="h-[64px] sm:h-[64px] lg:h-[68px]" />
+
 
       {/* =========================================================
           MOBILE OVERLAY
