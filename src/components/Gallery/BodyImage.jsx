@@ -22,6 +22,12 @@ const PIN_ICON_URL =
   "https://img.icons8.com/?size=100&id=2EuI26KqYJ6b&format=png&color=000000";
 const MAX_FETCH_PAGES = 200;
 
+// Navbar <-> BodyImage bridge for the mobile sidebar "Liked" button.
+// These three values must match the ones declared in Navbar.jsx.
+const OPEN_LIKED_KEY = "openLikedFilter";
+const OPEN_LIKED_EVENT = "gallery:open-liked";
+const FILTER_CHANGED_EVENT = "gallery:filter-changed";
+
 const getImageId = (image) => image?.id || image?._id;
 
 /* Google Material icons (inline SVG, no extra package needed) */
@@ -64,7 +70,6 @@ const MaterialIcon = ({ name, slash = false, size = 22 }) => (
 const GALLERY_WIDTHS = [600, 900, 1400];
 const GALLERY_SIZES = "(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw";
 const PREVIEW_WIDTH = 1920;
-const PREVIEW_BLUR_WIDTH = 100;
 
 const isCloudinaryUrl = (url) =>
   typeof url === "string" &&
@@ -79,11 +84,6 @@ const getGalleryImageUrl = (url, width) =>
 const getPreviewImageUrl = (url) =>
   isCloudinaryUrl(url)
     ? url.replace("/upload/", `/upload/c_limit,w_${PREVIEW_WIDTH},q_auto:good,f_auto/`)
-    : url;
-
-const getPreviewBlurUrl = (url) =>
-  isCloudinaryUrl(url)
-    ? url.replace("/upload/", `/upload/c_limit,w_${PREVIEW_BLUR_WIDTH},q_auto:low,f_auto,blur:1000/`)
     : url;
 
 const getGallerySrcSet = (url) =>
@@ -314,7 +314,7 @@ export default function BodyImage() {
   // Preload first few images when gallery loads
   useEffect(() => {
     if (isLoading || galleryImages.length === 0) return;
-    
+
     const imagesToPreload = galleryImages.slice(0, 10);
     imagesToPreload.forEach((image) => {
       const url = getPreviewImageUrl(image?.image_url);
@@ -573,9 +573,49 @@ export default function BodyImage() {
     }
   }, [isLoggedIn, userEmail]);
 
+  // Sidebar "Liked" — case 1: arrived from another page with the flag set.
+  // Declared BEFORE the loadFavorites effect so the ref is ready when it runs.
+  useEffect(() => {
+    let flagged = false;
+    try {
+      flagged = sessionStorage.getItem(OPEN_LIKED_KEY) === "1";
+    } catch {}
+    if (flagged) {
+      try {
+        sessionStorage.removeItem(OPEN_LIKED_KEY);
+      } catch {}
+      openLikedAfterLoginRef.current = true; // loadFavorites applies it
+    }
+  }, []);
+
   useEffect(() => {
     loadFavorites();
   }, [loadFavorites]);
+
+  // Sidebar "Liked" — case 2: already on the gallery page.
+  useEffect(() => {
+    const handleOpenLiked = () => {
+      try {
+        sessionStorage.removeItem(OPEN_LIKED_KEY);
+      } catch {}
+      openLikedAfterLoginRef.current = true;
+      loadFavorites();
+    };
+    window.addEventListener(OPEN_LIKED_EVENT, handleOpenLiked);
+    return () => window.removeEventListener(OPEN_LIKED_EVENT, handleOpenLiked);
+  }, [loadFavorites]);
+
+  // Tell the Navbar which filter is active (sidebar highlight).
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent(FILTER_CHANGED_EVENT, {
+        detail: { 
+          liked: typeFilter === "liked",
+          filter: typeFilter,
+        },
+      })
+    );
+  }, [typeFilter]);
 
   // Clear favorites when user logs out
   useEffect(() => {
@@ -677,7 +717,7 @@ export default function BodyImage() {
   const handleImageClick = (index) => {
     const image = previewImages[index];
     const imageUrl = getPreviewImageUrl(image?.image_url);
-    
+
     // Preload the image before showing it
     const img = new window.Image();
     img.onload = () => {
@@ -697,10 +737,10 @@ export default function BodyImage() {
     };
     setIsPreviewLoading(true);
     img.src = imageUrl;
-    
+
     // Preload adjacent images for smoother navigation
     preloadAdjacentImages(index);
-    
+
     // Push history state when preview opens
     window.history.pushState({ previewOpen: true }, "", window.location.href);
   };
@@ -730,7 +770,7 @@ export default function BodyImage() {
     setPreviewType("other");
     setPreviewPinned(false);
     setIsPreviewLoading(false);
-    
+
     // Go back in history to remove the preview state (only if not triggered by popstate)
     if (window.history.state?.previewOpen && !isClosingPreviewRef.current) {
       isClosingPreviewRef.current = true;
@@ -767,7 +807,7 @@ export default function BodyImage() {
     const nextIndex = (previewImageIndex + 1) % previewImages.length;
     const image = previewImages[nextIndex];
     const imageUrl = getPreviewImageUrl(image?.image_url);
-    
+
     // Preload before showing
     const img = new window.Image();
     img.onload = () => {
@@ -798,7 +838,7 @@ export default function BodyImage() {
         : previewImageIndex - 1;
     const image = previewImages[prevIndex];
     const imageUrl = getPreviewImageUrl(image?.image_url);
-    
+
     // Preload before showing
     const img = new window.Image();
     img.onload = () => {
@@ -1076,43 +1116,43 @@ export default function BodyImage() {
 
               <div className={styles.previewContent}>
                 {isPreviewLoading && (
-                  <div 
+                  <div
                     style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      color: 'white',
-                      fontSize: '14px',
-                      fontWeight: '500',
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      color: "white",
+                      fontSize: "14px",
+                      fontWeight: "500",
                       zIndex: 10,
-                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                      padding: '12px 20px',
-                      borderRadius: '24px',
-                      backdropFilter: 'blur(8px)'
+                      backgroundColor: "rgba(0, 0, 0, 0.6)",
+                      padding: "12px 20px",
+                      borderRadius: "24px",
+                      backdropFilter: "blur(8px)",
                     }}
                   >
-                    <svg 
-                      className="animate-spin" 
-                      style={{ width: '16px', height: '16px' }}
-                      xmlns="http://www.w3.org/2000/svg" 
-                      fill="none" 
+                    <svg
+                      className="animate-spin"
+                      style={{ width: "16px", height: "16px" }}
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
                       viewBox="0 0 24 24"
                     >
-                      <circle 
-                        className="opacity-25" 
-                        cx="12" 
-                        cy="12" 
-                        r="10" 
-                        stroke="currentColor" 
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
                         strokeWidth="4"
                       />
-                      <path 
-                        className="opacity-75" 
-                        fill="currentColor" 
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       />
                     </svg>
@@ -1123,9 +1163,9 @@ export default function BodyImage() {
                   src={previewImage}
                   alt="Preview"
                   className={styles.previewImage}
-                  style={{ 
+                  style={{
                     opacity: isPreviewLoading ? 0.5 : 1,
-                    transition: 'opacity 0.15s ease-in-out'
+                    transition: "opacity 0.15s ease-in-out",
                   }}
                 />
 

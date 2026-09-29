@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useBookingContext } from "@/src/components/Booking/BookingContext";
 import { useAuth } from "@/src/context/AuthContext";
+import { RiLogoutCircleLine } from "react-icons/ri";
 
 const links = [
   { href: "/", label: "Home" },
@@ -42,6 +43,14 @@ const HeartIcon = ({ size = 16 }) => (
   </svg>
 );
 
+const mobileLinks = [
+  { href: "/", label: "Home" },
+  { href: "/service", label: "Service" },
+  { href: "/gallery", label: "Gallery" },
+  { href: "/contact", label: "Contact" },
+  { href: "/gallery", label: "Gallery", filter: "liked", icon: <HeartIcon size={15} />, iconLabel: "Liked", requiresAuth: true },
+];
+
 // Get avatar letter from email.
 // jagan@gmail.com -> J
 // admin@lovelylooks.in -> A
@@ -59,17 +68,27 @@ const getAvatarLetter = (email) => {
  * Navbar now uses global auth context instead of props.
  * The Navbar component itself consumes auth state from AuthProvider.
  */
-export default function Navbar({
-  onLikedClick = () => {},
-}) {
+export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [isLikedActive, setIsLikedActive] = useState(false);
 
   const pathname = usePathname();
+  const router = useRouter();
   const { openForm } = useBookingContext();
   const { isLoggedIn, userEmail, googleLogin, logout } = useAuth();
 
   const avatarLetter = getAvatarLetter(userEmail);
+
+  // Listen for filter changes from Gallery to highlight Liked in sidebar
+  useEffect(() => {
+    const handleFilterChanged = (event) => {
+      setIsLikedActive(event.detail?.liked || false);
+    };
+
+    window.addEventListener("gallery:filter-changed", handleFilterChanged);
+    return () => window.removeEventListener("gallery:filter-changed", handleFilterChanged);
+  }, []);
 
   const handleBookNowClick = () => {
     setOpen(false);
@@ -119,10 +138,14 @@ export default function Navbar({
 
   const handleMobileLiked = () => {
     setOpen(false);
-
-    if (onLikedClick) {
-      onLikedClick();
+    
+    // Navigate to gallery and trigger liked filter
+    if (pathname !== "/gallery") {
+      router.push("/gallery");
     }
+    
+    // Dispatch event to open liked filter
+    window.dispatchEvent(new CustomEvent("gallery:open-liked"));
   };
 
   const handleMobileLogin = () => {
@@ -528,32 +551,73 @@ export default function Navbar({
 
         {/* Navigation Links */}
         <ul className="flex flex-col space-y-3">
-          {links.map(({ href, label }) => {
-            const active = pathname === href;
+          {mobileLinks.map(({ href, label, filter, icon, iconLabel, requiresAuth }) => {
+            // Skip auth-required items if not logged in
+            if (requiresAuth && !isLoggedIn) return null;
+
+            const active = pathname === href && filter && (
+              filter === "liked" ? isLikedActive : currentFilter === filter
+            );
+
+            const handleClick = () => {
+              setOpen(false);
+              if (filter === "liked") {
+                handleMobileLiked();
+              }
+            };
 
             return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  onClick={() => setOpen(false)}
-                  className={`
-                    flex items-center
-                    rounded-xl
-                    px-4 py-3
-                    text-base
-                    font-semibold
-                    tracking-wide
-                    transition-all
-                    duration-200
-                    ${
-                      active
-                        ? "bg-white text-[#7b1fa2] shadow-md"
-                        : "bg-white/8 text-white hover:bg-white/15"
-                    }
-                  `}
-                >
-                  {label}
-                </Link>
+              <li key={href + (filter || "")}>
+                {icon ? (
+                  <button
+                    type="button"
+                    onClick={handleClick}
+                    className={`
+                      flex items-center
+                      gap-3
+                      rounded-xl
+                      px-4 py-3
+                      text-base
+                      font-semibold
+                      tracking-wide
+                      transition-all
+                      duration-200
+                      w-full text-left
+                      ${
+                        active
+                          ? "bg-white text-[#7b1fa2] shadow-md"
+                          : "bg-white/8 text-white hover:bg-white/15"
+                      }
+                    `}
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
+                      {icon}
+                    </span>
+                    {iconLabel}
+                  </button>
+                ) : (
+                  <Link
+                    href={href}
+                    onClick={() => setOpen(false)}
+                    className={`
+                      flex items-center
+                      rounded-xl
+                      px-4 py-3
+                      text-base
+                      font-semibold
+                      tracking-wide
+                      transition-all
+                      duration-200
+                      ${
+                        active
+                          ? "bg-white text-[#7b1fa2] shadow-md"
+                          : "bg-white/8 text-white hover:bg-white/15"
+                      }
+                    `}
+                  >
+                    {label}
+                  </Link>
+                )}
               </li>
             );
           })}
@@ -626,38 +690,6 @@ export default function Navbar({
                 </span>
               </div>
 
-              {/* Liked */}
-              <button
-                type="button"
-                onClick={handleMobileLiked}
-                className="
-                  flex items-center
-                  gap-3
-                  rounded-xl
-                  bg-white/10
-                  px-4 py-3
-                  font-semibold
-                  text-white
-                  transition-all
-                  duration-200
-                  hover:bg-white/20
-                "
-              >
-                <span
-                  className="
-                    flex h-8 w-8
-                    items-center justify-center
-                    rounded-full
-                    bg-white/20
-                    text-[#f472b6]
-                  "
-                >
-                  <HeartIcon size={15} />
-                </span>
-
-                Liked
-              </button>
-
               {/* Logout */}
               <button
                 type="button"
@@ -686,7 +718,7 @@ export default function Navbar({
                     text-white/80
                   "
                 >
-                  ↩
+                  <RiLogoutCircleLine size={16} />
                 </span>
 
                 Logout
