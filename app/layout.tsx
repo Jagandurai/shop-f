@@ -9,6 +9,7 @@ import { BookingProvider } from "@/src/components/Booking/BookingContext";
 import Booking from "@/src/components/Booking/Booking";
 import AdvertisementPopup from "@/src/components/Booking/AdvertisementPopup";
 import FloatingActions from "@/src/components/FloatingActions/FloatingActions";
+import { AuthProvider } from "@/src/context/AuthContext";
 
 export const metadata = {
   title: "ʟᴏᴠᴇʟʏ ʟᴏᴏᴋꜱ",
@@ -29,14 +30,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <GoogleOAuthProvider
           clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}
         >
-          <BookingProvider>
-            <Header />
-            <main className="flex-1">{children}</main>
-            <Footer />
-            <AdvertisementPopup />
-            <Booking />
-            <FloatingActions />
-          </BookingProvider>
+          <AuthProvider>
+            <BookingProvider>
+              <Header />
+              <main className="flex-1">{children}</main>
+              <Footer />
+              <AdvertisementPopup />
+              <Booking />
+              <FloatingActions />
+            </BookingProvider>
+          </AuthProvider>
         </GoogleOAuthProvider>
       </body>
     </html>

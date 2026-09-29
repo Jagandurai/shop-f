@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useBookingContext } from "@/src/components/Booking/BookingContext";
+import { useAuth } from "@/src/context/AuthContext";
 
 const links = [
   { href: "/", label: "Home" },
@@ -55,20 +56,10 @@ const getAvatarLetter = (email) => {
 };
 
 /**
- * Navbar accepts optional auth props.
- *
- * Props:
- *   isLoggedIn       – boolean
- *   userEmail        – string
- *   onLoginClick     – () => void
- *   onLogoutClick    – () => void
- *   onLikedClick     – () => void
+ * Navbar now uses global auth context instead of props.
+ * The Navbar component itself consumes auth state from AuthProvider.
  */
 export default function Navbar({
-  isLoggedIn = false,
-  userEmail = "",
-  onLoginClick = () => {},
-  onLogoutClick = () => {},
   onLikedClick = () => {},
 }) {
   const [open, setOpen] = useState(false);
@@ -76,6 +67,7 @@ export default function Navbar({
 
   const pathname = usePathname();
   const { openForm } = useBookingContext();
+  const { isLoggedIn, userEmail, googleLogin, logout } = useAuth();
 
   const avatarLetter = getAvatarLetter(userEmail);
 
@@ -116,18 +108,13 @@ export default function Navbar({
 
   const handleUserIconClick = () => {
     if (!isLoggedIn) {
-      if (onLoginClick) {
-        onLoginClick();
-      }
+      googleLogin();
     }
   };
 
   const handleLogout = () => {
     setUserMenuOpen(false);
-
-    if (onLogoutClick) {
-      onLogoutClick();
-    }
+    logout();
   };
 
   const handleMobileLiked = () => {
@@ -140,18 +127,12 @@ export default function Navbar({
 
   const handleMobileLogin = () => {
     setOpen(false);
-
-    if (onLoginClick) {
-      onLoginClick();
-    }
+    googleLogin();
   };
 
   const handleMobileLogout = () => {
     setOpen(false);
-
-    if (onLogoutClick) {
-      onLogoutClick();
-    }
+    logout();
   };
 
   return (
@@ -455,6 +436,7 @@ export default function Navbar({
       </header>
 
        <div className="h-[64px] sm:h-[64px] lg:h-[68px]" />
+       
 
 
       {/* =========================================================

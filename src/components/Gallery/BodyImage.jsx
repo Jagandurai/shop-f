@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import { googleLogout, useGoogleLogin } from "@react-oauth/google";
-import { jwtDecode } from "jwt-decode";
 import { ToastContainer, toast } from "react-toastify";
 import {
   X,
@@ -15,7 +13,7 @@ import {
 import { useSwipeable } from "react-swipeable";
 import styles from "./BodyImage.module.scss";
 import "react-toastify/dist/ReactToastify.css";
-import Navbar from "@/src/components/Header/Header";
+import { useAuth } from "@/src/context/AuthContext";
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_URL}/api/gallery`;
 const ITEMS_PER_PAGE = 30;
@@ -65,6 +63,8 @@ const MaterialIcon = ({ name, slash = false, size = 22 }) => (
 
 const GALLERY_WIDTHS = [600, 900, 1400];
 const GALLERY_SIZES = "(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw";
+const PREVIEW_WIDTH = 1920;
+const PREVIEW_BLUR_WIDTH = 100;
 
 const isCloudinaryUrl = (url) =>
   typeof url === "string" &&
@@ -74,6 +74,16 @@ const isCloudinaryUrl = (url) =>
 const getGalleryImageUrl = (url, width) =>
   isCloudinaryUrl(url)
     ? url.replace("/upload/", `/upload/c_limit,w_${width},q_auto:best,f_auto/`)
+    : url;
+
+const getPreviewImageUrl = (url) =>
+  isCloudinaryUrl(url)
+    ? url.replace("/upload/", `/upload/c_limit,w_${PREVIEW_WIDTH},q_auto:good,f_auto/`)
+    : url;
+
+const getPreviewBlurUrl = (url) =>
+  isCloudinaryUrl(url)
+    ? url.replace("/upload/", `/upload/c_limit,w_${PREVIEW_BLUR_WIDTH},q_auto:low,f_auto,blur:1000/`)
     : url;
 
 const getGallerySrcSet = (url) =>
@@ -136,6 +146,7 @@ export default function BodyImage() {
   const favoriteIdsRef = useRef([]);
   const pendingFavoriteImageRef = useRef(null);
   const openLikedAfterLoginRef = useRef(false);
+  const isClosingPreviewRef = useRef(false);
 
   const [allImages, setAllImages] = useState([]);
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
@@ -149,13 +160,12 @@ export default function BodyImage() {
   const [previewImageIndex, setPreviewImageIndex] = useState(null);
   const [previewType, setPreviewType] = useState("other");
   const [previewPinned, setPreviewPinned] = useState(false);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [preloadedImages, setPreloadedImages] = useState(new Set());
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { isLoggedIn, userEmail, isAdmin, googleLogin } = useAuth();
 
   const [favoriteIds, setFavoriteIds] = useState([]);
-  const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [favoriteOperationPending, setFavoriteOperationPending] = useState(
     new Set()
   );
@@ -179,17 +189,6 @@ export default function BodyImage() {
   useEffect(() => {
     favoriteIdsRef.current = favoriteIds;
   }, [favoriteIds]);
-
-  useEffect(() => {
-    const storedLogin = localStorage.getItem("isLoggedIn");
-    const storedEmail = localStorage.getItem("userEmail");
-    if (storedLogin === "true" && storedEmail) {
-      setIsLoggedIn(true);
-      setUserEmail(storedEmail);
-      checkIfAdmin(storedEmail);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     const checkScreen = () => {
@@ -312,6 +311,21 @@ export default function BodyImage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewImage, previewImageIndex, galleryImages]);
 
+  // Preload first few images when gallery loads
+  useEffect(() => {
+    if (isLoading || galleryImages.length === 0) return;
+    
+    const imagesToPreload = galleryImages.slice(0, 10);
+    imagesToPreload.forEach((image) => {
+      const url = getPreviewImageUrl(image?.image_url);
+      if (url && !preloadedImages.has(url)) {
+        const img = new window.Image();
+        img.src = url;
+        setPreloadedImages((prev) => new Set(prev).add(url));
+      }
+    });
+  }, [isLoading, galleryImages, preloadedImages]);
+
   useEffect(() => {
     if (isLoading || openedFromLinkRef.current || allImages.length === 0) return;
     openedFromLinkRef.current = true;
@@ -328,26 +342,12 @@ export default function BodyImage() {
     }
     setVisibleCount((prev) => Math.max(prev, index + 1));
     const image = allImages[index];
-    setPreviewImage(image?.image_url || null);
+    setPreviewImage(getPreviewImageUrl(image?.image_url) || null);
     setPreviewImageIndex(index);
     setPreviewType(image?.type || "other");
     setPreviewPinned(Boolean(image?.isPinned));
     window.history.replaceState(null, "", window.location.pathname);
   }, [isLoading, allImages]);
-
-  const checkIfAdmin = async (email) => {
-    try {
-      const res = await axios.post(`${API_BASE_URL}/check-admin`, { email });
-      if (res.data?.success) {
-        setIsAdmin(true);
-      } else {
-        handleLogout(false);
-        toast.error("You are not an admin");
-      }
-    } catch (error) {
-      console.error("Admin check error:", error);
-    }
-  };
 
   const compressImage = (file, quality = 0.9) => {
     return new Promise((resolve) => {
@@ -541,68 +541,6 @@ export default function BodyImage() {
     }
   };
 
-  const completeLogin = async (email) => {
-    let admin = false;
-    try {
-      const res = await axios.post(`${API_BASE_URL}/check-admin`, { email });
-      admin = Boolean(res.data?.success);
-    } catch (error) {
-      console.error("Admin check error:", error);
-    }
-
-    const pendingImage = pendingFavoriteImageRef.current;
-    pendingFavoriteImageRef.current = null;
-
-    if (pendingImage) {
-      const pendingId = getImageId(pendingImage);
-      try {
-        await axios.post(`${API_BASE_URL}/${pendingId}/favorite`, null, {
-          headers: { "x-user-email": email },
-        });
-        toast.success("Added to favourites");
-      } catch (error) {
-        if (error.response?.status !== 409) {
-          console.error("Pending favourite error:", error);
-          toast.error("Failed to update favourite");
-        }
-      }
-    }
-
-    localStorage.setItem("isLoggedIn", "true");
-    localStorage.setItem("userEmail", email);
-    setIsAdmin(admin);
-    setUserEmail(email);
-    setIsLoggedIn(true);
-    toast.success(`Welcome: ${email}`);
-  };
-
-  const googleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      try {
-        const { data } = await axios.get(
-          "https://www.googleapis.com/oauth2/v3/userinfo",
-          { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
-        );
-        if (!data?.email) throw new Error("No email returned by Google");
-        await completeLogin(data.email);
-      } catch (error) {
-        console.error("Google popup login error:", error);
-        pendingFavoriteImageRef.current = null;
-        openLikedAfterLoginRef.current = false;
-        toast.error("Failed to process login.");
-      }
-    },
-    onError: () => {
-      pendingFavoriteImageRef.current = null;
-      openLikedAfterLoginRef.current = false;
-      toast.error("Google Login Failed");
-    },
-    onNonOAuthError: () => {
-      pendingFavoriteImageRef.current = null;
-      openLikedAfterLoginRef.current = false;
-    },
-  });
-
   const startGoogleLogin = ({
     favoriteImage = null,
     openLiked = false,
@@ -613,25 +551,12 @@ export default function BodyImage() {
     googleLogin();
   };
 
-  const handleLogout = (showToast = true) => {
-    googleLogout();
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("userEmail");
-    setIsLoggedIn(false);
-    setUserEmail("");
-    setIsAdmin(false);
-    setFavoriteIds([]);
-    if (typeFilter === "liked") setTypeFilter("all");
-    if (showToast) toast.info("Logged out successfully");
-  };
-
   const loadFavorites = useCallback(async () => {
     if (!isLoggedIn || !userEmail) {
       setFavoriteIds([]);
       return;
     }
     try {
-      setIsLoadingFavorites(true);
       const res = await axios.get(`${API_BASE_URL}/favorites`, {
         headers: { "x-user-email": userEmail },
       });
@@ -645,14 +570,20 @@ export default function BodyImage() {
     } catch (error) {
       console.error("Error loading favorites:", error);
       setFavoriteIds([]);
-    } finally {
-      setIsLoadingFavorites(false);
     }
   }, [isLoggedIn, userEmail]);
 
   useEffect(() => {
     loadFavorites();
   }, [loadFavorites]);
+
+  // Clear favorites when user logs out
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setFavoriteIds([]);
+      if (typeFilter === "liked") setTypeFilter("all");
+    }
+  }, [isLoggedIn, typeFilter]);
 
   const isFavorite = useCallback(
     (image) => {
@@ -745,10 +676,52 @@ export default function BodyImage() {
 
   const handleImageClick = (index) => {
     const image = previewImages[index];
-    setPreviewImage(image?.image_url || null);
-    setPreviewImageIndex(index);
-    setPreviewType(image?.type || "other");
-    setPreviewPinned(Boolean(image?.isPinned));
+    const imageUrl = getPreviewImageUrl(image?.image_url);
+    
+    // Preload the image before showing it
+    const img = new window.Image();
+    img.onload = () => {
+      setPreviewImage(imageUrl);
+      setPreviewImageIndex(index);
+      setPreviewType(image?.type || "other");
+      setPreviewPinned(Boolean(image?.isPinned));
+      setIsPreviewLoading(false);
+    };
+    img.onerror = () => {
+      // Fallback to showing even if preload fails
+      setPreviewImage(imageUrl);
+      setPreviewImageIndex(index);
+      setPreviewType(image?.type || "other");
+      setPreviewPinned(Boolean(image?.isPinned));
+      setIsPreviewLoading(false);
+    };
+    setIsPreviewLoading(true);
+    img.src = imageUrl;
+    
+    // Preload adjacent images for smoother navigation
+    preloadAdjacentImages(index);
+    
+    // Push history state when preview opens
+    window.history.pushState({ previewOpen: true }, "", window.location.href);
+  };
+
+  const preloadAdjacentImages = (currentIndex) => {
+    const indicesToPreload = [
+      (currentIndex + 1) % previewImages.length,
+      (currentIndex - 1 + previewImages.length) % previewImages.length,
+      (currentIndex + 2) % previewImages.length,
+      (currentIndex - 2 + previewImages.length) % previewImages.length,
+    ];
+
+    indicesToPreload.forEach((idx) => {
+      const image = previewImages[idx];
+      const url = getPreviewImageUrl(image?.image_url);
+      if (url && !preloadedImages.has(url)) {
+        const img = new window.Image();
+        img.src = url;
+        setPreloadedImages((prev) => new Set(prev).add(url));
+      }
+    });
   };
 
   const closePreview = () => {
@@ -756,16 +729,65 @@ export default function BodyImage() {
     setPreviewImageIndex(null);
     setPreviewType("other");
     setPreviewPinned(false);
+    setIsPreviewLoading(false);
+    
+    // Go back in history to remove the preview state (only if not triggered by popstate)
+    if (window.history.state?.previewOpen && !isClosingPreviewRef.current) {
+      isClosingPreviewRef.current = true;
+      window.history.back();
+      setTimeout(() => {
+        isClosingPreviewRef.current = false;
+      }, 100);
+    }
   };
+
+  // Handle browser Back button for image preview
+  useEffect(() => {
+    const handlePopState = () => {
+      if (previewImage && !isClosingPreviewRef.current) {
+        // If preview is open, close it instead of navigating away
+        // Don't call preventDefault as it's already handled by history.back()
+        isClosingPreviewRef.current = true;
+        setPreviewImage(null);
+        setPreviewImageIndex(null);
+        setPreviewType("other");
+        setPreviewPinned(false);
+        setTimeout(() => {
+          isClosingPreviewRef.current = false;
+        }, 100);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [previewImage]);
 
   const nextImage = () => {
     if (!previewImages.length || previewImageIndex === null) return;
     const nextIndex = (previewImageIndex + 1) % previewImages.length;
     const image = previewImages[nextIndex];
-    setPreviewImage(image?.image_url || null);
-    setPreviewImageIndex(nextIndex);
-    setPreviewType(image?.type || "other");
-    setPreviewPinned(Boolean(image?.isPinned));
+    const imageUrl = getPreviewImageUrl(image?.image_url);
+    
+    // Preload before showing
+    const img = new window.Image();
+    img.onload = () => {
+      setPreviewImage(imageUrl);
+      setPreviewImageIndex(nextIndex);
+      setPreviewType(image?.type || "other");
+      setPreviewPinned(Boolean(image?.isPinned));
+      setIsPreviewLoading(false);
+      preloadAdjacentImages(nextIndex);
+    };
+    img.onerror = () => {
+      setPreviewImage(imageUrl);
+      setPreviewImageIndex(nextIndex);
+      setPreviewType(image?.type || "other");
+      setPreviewPinned(Boolean(image?.isPinned));
+      setIsPreviewLoading(false);
+      preloadAdjacentImages(nextIndex);
+    };
+    setIsPreviewLoading(true);
+    img.src = imageUrl;
   };
 
   const prevImage = () => {
@@ -775,10 +797,28 @@ export default function BodyImage() {
         ? previewImages.length - 1
         : previewImageIndex - 1;
     const image = previewImages[prevIndex];
-    setPreviewImage(image?.image_url || null);
-    setPreviewImageIndex(prevIndex);
-    setPreviewType(image?.type || "other");
-    setPreviewPinned(Boolean(image?.isPinned));
+    const imageUrl = getPreviewImageUrl(image?.image_url);
+    
+    // Preload before showing
+    const img = new window.Image();
+    img.onload = () => {
+      setPreviewImage(imageUrl);
+      setPreviewImageIndex(prevIndex);
+      setPreviewType(image?.type || "other");
+      setPreviewPinned(Boolean(image?.isPinned));
+      setIsPreviewLoading(false);
+      preloadAdjacentImages(prevIndex);
+    };
+    img.onerror = () => {
+      setPreviewImage(imageUrl);
+      setPreviewImageIndex(prevIndex);
+      setPreviewType(image?.type || "other");
+      setPreviewPinned(Boolean(image?.isPinned));
+      setIsPreviewLoading(false);
+      preloadAdjacentImages(prevIndex);
+    };
+    setIsPreviewLoading(true);
+    img.src = imageUrl;
   };
 
   const swipeHandlers = useSwipeable({
@@ -793,15 +833,6 @@ export default function BodyImage() {
 
   return (
     <>
-      {/* Navbar receives auth state and callbacks — no duplicate logic */}
-      <Navbar
-        isLoggedIn={isLoggedIn}
-        userEmail={userEmail}
-        onLoginClick={() => startGoogleLogin()}
-        onLogoutClick={() => handleLogout()}
-        onLikedClick={() => setTypeFilter("liked")}
-      />
-
       <div className={styles.galleryContainer}>
         {/* Admin Upload Section — redesigned */}
         {isLoggedIn && isAdmin && (
@@ -1044,10 +1075,58 @@ export default function BodyImage() {
               </button>
 
               <div className={styles.previewContent}>
+                {isPreviewLoading && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      color: 'white',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      zIndex: 10,
+                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                      padding: '12px 20px',
+                      borderRadius: '24px',
+                      backdropFilter: 'blur(8px)'
+                    }}
+                  >
+                    <svg 
+                      className="animate-spin" 
+                      style={{ width: '16px', height: '16px' }}
+                      xmlns="http://www.w3.org/2000/svg" 
+                      fill="none" 
+                      viewBox="0 0 24 24"
+                    >
+                      <circle 
+                        className="opacity-25" 
+                        cx="12" 
+                        cy="12" 
+                        r="10" 
+                        stroke="currentColor" 
+                        strokeWidth="4"
+                      />
+                      <path 
+                        className="opacity-75" 
+                        fill="currentColor" 
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Loading...
+                  </div>
+                )}
                 <img
                   src={previewImage}
                   alt="Preview"
                   className={styles.previewImage}
+                  style={{ 
+                    opacity: isPreviewLoading ? 0.5 : 1,
+                    transition: 'opacity 0.15s ease-in-out'
+                  }}
                 />
 
                 {currentPreviewImage && (
