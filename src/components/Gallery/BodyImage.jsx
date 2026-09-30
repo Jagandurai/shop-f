@@ -27,6 +27,21 @@ const PIN_ICON_URL =
 // (only used by the "liked" filter and shared-link lookup).
 const MAX_FETCH_PAGES = 200;
 
+/* ------------------------------------------------------------------ */
+/* Upload size limit                                                   */
+/* ------------------------------------------------------------------ */
+// The file sent to the backend is guaranteed to be <= this many bytes.
+// NOTE: Vercel serverless functions reject request bodies above ~4.5 MB
+// (HTTP 413 FUNCTION_PAYLOAD_TOO_LARGE) BEFORE your Express/multer code runs.
+// So the default is 4 MB. Set NEXT_PUBLIC_MAX_UPLOAD_MB=10 only if the
+// backend is NOT behind that limit (non-Vercel host, or direct-to-Cloudinary).
+const MAX_UPLOAD_MB = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB) || 4;
+const MAX_UPLOAD_BYTES = Math.floor(MAX_UPLOAD_MB * 1024 * 1024);
+
+const MIN_JPEG_QUALITY = 0.65; // never go visibly blurry
+const MAX_JPEG_QUALITY = 0.95;
+const SCALE_STEPS = [1, 0.9, 0.8, 0.7, 0.6, 0.5]; // resize only as last resort
+
 // Navbar <-> BodyImage bridge for the mobile sidebar "Liked" button.
 // These three values must match the ones declared in Navbar.jsx.
 const OPEN_LIKED_KEY = "openLikedFilter";
@@ -143,6 +158,146 @@ const parsePagination = (res, fallbackPage) => {
   return { resolvedHasNextPage };
 };
 
+/* ------------------------------------------------------------------ */
+/* Browser-side image compression helpers                              */
+/* ------------------------------------------------------------------ */
+const formatMB = (bytes) => `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+
+const loadBitmap = async (file) => {
+  // createImageBitmap applies EXIF orientation (important for phone photos).
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch {
+      /* fall through to <img> decoding */
+    }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("decode-failed"));
+      img.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const canvasToBlob = (canvas, type, quality) =>
+  new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+
+const drawScaled = (source, width, height, fillWhite) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  if (fillWhite) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas;
+};
+
+const hasTransparency = (source, width, height) => {
+  const maxSide = 256;
+  const ratio = Math.min(1, maxSide / Math.max(width, height));
+  const canvas = drawScaled(source, width * ratio, height * ratio, false);
+  const { data } = canvas
+    .getContext("2d")
+    .getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) return true;
+  }
+  return false;
+};
+
+const extensionFor = (type) =>
+  type === "image/webp" ? "webp" : type === "image/png" ? "png" : "jpg";
+
+/**
+ * Returns the original file when it is already within maxBytes.
+ * Otherwise re-encodes it: first by lowering quality only (binary search for
+ * the highest quality that fits), and only if that is not enough, by shrinking
+ * dimensions step by step. Never upscales, keeps aspect ratio, keeps
+ * transparency (uses WebP instead of JPEG for images with alpha).
+ * Throws an Error with code "COMPRESS_FAILED" when it cannot fit.
+ */
+const compressImageToLimit = async (file, maxBytes) => {
+  if (file.size <= maxBytes) return file;
+
+  const fail = () => {
+    const err = new Error("compress-failed");
+    err.code = "COMPRESS_FAILED";
+    return err;
+  };
+
+  let bitmap;
+  try {
+    bitmap = await loadBitmap(file);
+  } catch {
+    throw fail();
+  }
+
+  const width = bitmap.width;
+  const height = bitmap.height;
+  const alpha = file.type === "image/png" || file.type === "image/webp"
+    ? hasTransparency(bitmap, width, height)
+    : false;
+
+  // Pick the output format.
+  let outType = "image/jpeg";
+  if (file.type === "image/webp") outType = "image/webp";
+  else if (alpha) outType = "image/webp"; // WebP keeps transparency, JPEG doesn't
+  const fillWhite = outType === "image/jpeg";
+
+  try {
+    for (const scale of SCALE_STEPS) {
+      const canvas = drawScaled(bitmap, width * scale, height * scale, fillWhite);
+
+      // Lowest acceptable quality first: if even that is too big, shrink more.
+      const lowest = await canvasToBlob(canvas, outType, MIN_JPEG_QUALITY);
+      if (!lowest) throw fail();
+      // Browser doesn't support the requested encoder (returned PNG instead).
+      if (lowest.type !== outType) {
+        if (alpha) throw fail(); // can't safely drop transparency
+        outType = "image/jpeg";
+        continue;
+      }
+      if (lowest.size > maxBytes) continue;
+
+      // Binary search for the highest quality that still fits.
+      let best = lowest;
+      let lo = MIN_JPEG_QUALITY;
+      let hi = MAX_JPEG_QUALITY;
+      for (let i = 0; i < 5; i += 1) {
+        const mid = (lo + hi) / 2;
+        const blob = await canvasToBlob(canvas, outType, mid);
+        if (blob && blob.size <= maxBytes) {
+          best = blob;
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+
+      const baseName = file.name.replace(/\.[^.]+$/, "") || "image";
+      return new File([best], `${baseName}.${extensionFor(outType)}`, {
+        type: outType,
+        lastModified: Date.now(),
+      });
+    }
+  } finally {
+    if (typeof bitmap.close === "function") bitmap.close();
+  }
+
+  throw fail();
+};
+
 export default function BodyImage() {
   const loadMoreRef = useRef(null);
   const observerRef = useRef(null);
@@ -153,6 +308,7 @@ export default function BodyImage() {
   const pendingFavoriteImageRef = useRef(null);
   const openLikedAfterLoginRef = useRef(false);
   const isClosingPreviewRef = useRef(false);
+  const isUploadingRef = useRef(false); // blocks duplicate uploads
 
   // Pagination bookkeeping (refs so they are never stale inside async code)
   const nextPageRef = useRef(1);
@@ -183,6 +339,9 @@ export default function BodyImage() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedType, setSelectedType] = useState("");
   const [selectedFileName, setSelectedFileName] = useState("");
+  // "idle" | "compressing" | "uploading"
+  const [uploadStatus, setUploadStatus] = useState("idle");
+  const isUploadBusy = uploadStatus !== "idle";
 
   const [typeFilter, setTypeFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("latest");
@@ -441,41 +600,32 @@ export default function BodyImage() {
     window.history.replaceState(null, "", window.location.pathname);
   }, [isLoading, allImages, hasMorePages, isFetchingMore, fetchImages]);
 
-  const compressImage = (file, quality = 0.9) => {
-    return new Promise((resolve) => {
-      if (file.size <= 9 * 1024 * 1024) {
-        resolve(file);
-        return;
-      }
-      toast.info("Compressing image...");
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new window.Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          canvas.toBlob(
-            (blob) => resolve(new File([blob], file.name, { type: file.type })),
-            file.type,
-            quality
-          );
-        };
-      };
-    });
-  };
-
   const handleFileChange = (e) => {
+    if (isUploadingRef.current) return;
     const file = e.target.files?.[0] || null;
     setSelectedFile(file);
     setSelectedFileName(file ? file.name : "");
   };
 
+  const getUploadErrorMessage = (error) => {
+    const status = error?.response?.status;
+    if (status === 413) {
+      return "The server rejected this image because it is too large. Please choose a smaller image.";
+    }
+    if (status === 401 || status === 403) {
+      return "You are not allowed to upload images. Please sign in again.";
+    }
+    if (error?.code === "ERR_NETWORK") {
+      return "Network error while uploading. Please check your connection and try again.";
+    }
+    return (
+      error?.response?.data?.message ||
+      "Failed to upload image. Please try again."
+    );
+  };
+
   const handleUploadClick = async () => {
+    if (isUploadingRef.current) return; // prevent duplicate uploads
     if (!selectedFile) {
       toast.warn("Please choose a file first");
       return;
@@ -485,44 +635,82 @@ export default function BodyImage() {
       return;
     }
 
-    let fileToUpload = selectedFile;
-    if (selectedFile.size > 9 * 1024 * 1024) {
-      fileToUpload = await compressImage(selectedFile, 0.9);
-    }
-
-    const formData = new FormData();
-    formData.append("image", fileToUpload);
-    formData.append("type", selectedType);
-
-    const uploadToast = toast.loading("Uploading...");
+    isUploadingRef.current = true;
+    const toastId = toast.loading("Preparing image...");
 
     try {
+      // 1) Compress only when the file is over the limit.
+      let fileToUpload = selectedFile;
+      if (selectedFile.size > MAX_UPLOAD_BYTES) {
+        setUploadStatus("compressing");
+        toast.update(toastId, { render: "Compressing image..." });
+        try {
+          fileToUpload = await compressImageToLimit(
+            selectedFile,
+            MAX_UPLOAD_BYTES
+          );
+        } catch (compressError) {
+          console.error("Compression error:", compressError);
+          toast.update(toastId, {
+            render: `Unable to compress this image below ${MAX_UPLOAD_MB}MB. Please choose a smaller image.`,
+            type: "error",
+            isLoading: false,
+            autoClose: 4000,
+          });
+          return;
+        }
+
+        // Hard guarantee: never send anything above the limit.
+        if (fileToUpload.size > MAX_UPLOAD_BYTES) {
+          toast.update(toastId, {
+            render: `Unable to compress this image below ${MAX_UPLOAD_MB}MB. Please choose a smaller image.`,
+            type: "error",
+            isLoading: false,
+            autoClose: 4000,
+          });
+          return;
+        }
+      }
+
+      // 2) Upload.
+      setUploadStatus("uploading");
+      toast.update(toastId, { render: "Uploading image..." });
+
+      const formData = new FormData();
+      formData.append("image", fileToUpload);
+      formData.append("type", selectedType);
+
+      // Do not set Content-Type manually: the browser adds the multipart
+      // boundary itself.
       await axios.post(API_BASE_URL, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          "x-user-email": userEmail,
-        },
+        headers: { "x-user-email": userEmail },
       });
 
-      await fetchImages(true);
       setSelectedFile(null);
       setSelectedType("");
       setSelectedFileName("");
+      const fileInput = document.getElementById("adminFileInput");
+      if (fileInput) fileInput.value = "";
 
-      toast.update(uploadToast, {
+      toast.update(toastId, {
         render: "Image uploaded successfully!",
         type: "success",
         isLoading: false,
         autoClose: 2000,
       });
+
+      await fetchImages(true);
     } catch (error) {
       console.error("Upload error:", error);
-      toast.update(uploadToast, {
-        render: "Failed to upload image",
+      toast.update(toastId, {
+        render: getUploadErrorMessage(error),
         type: "error",
         isLoading: false,
-        autoClose: 2000,
+        autoClose: 4000,
       });
+    } finally {
+      isUploadingRef.current = false;
+      setUploadStatus("idle");
     }
   };
 
@@ -982,7 +1170,13 @@ export default function BodyImage() {
           <div className={styles.uploadContainer}>
             {/* File chooser area */}
             <div className={styles.uploadFileArea}>
-              <label className={styles.chooseFileLabel} htmlFor="adminFileInput">
+              <label
+                className={styles.chooseFileLabel}
+                htmlFor="adminFileInput"
+                style={
+                  isUploadBusy ? { pointerEvents: "none", opacity: 0.6 } : undefined
+                }
+              >
                 Choose File
               </label>
               <input
@@ -990,6 +1184,7 @@ export default function BodyImage() {
                 type="file"
                 accept="image/*"
                 onChange={handleFileChange}
+                disabled={isUploadBusy}
                 className={styles.hiddenFileInput}
               />
               <span className={styles.fileNameDisplay}>
@@ -1005,6 +1200,7 @@ export default function BodyImage() {
               <button
                 type="button"
                 onClick={() => setSelectedType("makeup")}
+                disabled={isUploadBusy}
                 className={`${styles.uploadTypePill} ${
                   selectedType === "makeup" ? styles.uploadTypePillActive : ""
                 }`}
@@ -1014,6 +1210,7 @@ export default function BodyImage() {
               <button
                 type="button"
                 onClick={() => setSelectedType("hairstyle")}
+                disabled={isUploadBusy}
                 className={`${styles.uploadTypePill} ${
                   selectedType === "hairstyle" ? styles.uploadTypePillActive : ""
                 }`}
@@ -1029,10 +1226,45 @@ export default function BodyImage() {
             <button
               type="button"
               onClick={handleUploadClick}
-              disabled={!selectedFile || !selectedType}
+              disabled={!selectedFile || !selectedType || isUploadBusy}
+              aria-busy={isUploadBusy}
               className={styles.uploadButton}
             >
-              Upload Files
+              {isUploadBusy && (
+                <svg
+                  className="animate-spin"
+                  style={{
+                    width: "14px",
+                    height: "14px",
+                    marginRight: "8px",
+                    verticalAlign: "-2px",
+                    animation: "spin 1s linear infinite",
+                  }}
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    opacity="0.25"
+                  />
+                  <path
+                    fill="currentColor"
+                    opacity="0.75"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              )}
+              {uploadStatus === "compressing"
+                ? "Compressing image..."
+                : uploadStatus === "uploading"
+                ? "Uploading image..."
+                : "Upload Files"}
             </button>
           </div>
         )}
