@@ -10,6 +10,9 @@ import {
   Heart,
   SlidersHorizontal,
 } from "lucide-react";
+import { MdBrush } from "react-icons/md";
+import { PiStarFourBold } from "react-icons/pi";
+import { RiGalleryView2 } from "react-icons/ri";
 import { useSwipeable } from "react-swipeable";
 import styles from "./BodyImage.module.scss";
 import "react-toastify/dist/ReactToastify.css";
@@ -20,12 +23,15 @@ const ITEMS_PER_PAGE = 30;
 const MOBILE_BREAKPOINT = 768;
 const PIN_ICON_URL =
   "https://img.icons8.com/?size=100&id=2EuI26KqYJ6b&format=png&color=000000";
+// Safety cap for consecutive page requests inside a single load
+// (only used by the "liked" filter and shared-link lookup).
 const MAX_FETCH_PAGES = 200;
 
 // Navbar <-> BodyImage bridge for the mobile sidebar "Liked" button.
 // These three values must match the ones declared in Navbar.jsx.
 const OPEN_LIKED_KEY = "openLikedFilter";
 const OPEN_LIKED_EVENT = "gallery:open-liked";
+const RESET_FILTER_EVENT = "gallery:reset-filter";
 const FILTER_CHANGED_EVENT = "gallery:filter-changed";
 
 const getImageId = (image) => image?.id || image?._id;
@@ -148,8 +154,12 @@ export default function BodyImage() {
   const openLikedAfterLoginRef = useRef(false);
   const isClosingPreviewRef = useRef(false);
 
+  // Pagination bookkeeping (refs so they are never stale inside async code)
+  const nextPageRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const seenIdsRef = useRef(new Set());
+
   const [allImages, setAllImages] = useState([]);
-  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
   const [totalImages, setTotalImages] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -179,12 +189,12 @@ export default function BodyImage() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [columnCount, setColumnCount] = useState(4);
+  const [hasMorePages, setHasMorePages] = useState(true);
 
   const galleryImages = useMemo(
-    () => allImages.slice(0, visibleCount),
-    [allImages, visibleCount]
+    () => allImages,
+    [allImages]
   );
-  const hasNextPage = visibleCount < allImages.length;
 
   useEffect(() => {
     favoriteIdsRef.current = favoriteIds;
@@ -207,81 +217,137 @@ export default function BodyImage() {
     return () => window.removeEventListener("resize", checkScreen);
   }, []);
 
-  const fetchAllImagesForCurrentFilter = useCallback(async () => {
-    let page = 1;
-    let hasMore = true;
-    let all = [];
-
-    while (hasMore && page <= MAX_FETCH_PAGES) {
-      const params = { page, limit: ITEMS_PER_PAGE, sort: sortOrder };
-      if (typeFilter !== "all" && typeFilter !== "liked") {
-        params.type = typeFilter;
-      }
-      const res = await axios.get(API_BASE_URL, { params });
-      const data = Array.isArray(res.data?.data) ? res.data.data : [];
-      const { resolvedHasNextPage } = parsePagination(res, page);
-      all = [...all, ...data];
-      hasMore = resolvedHasNextPage;
-      page += 1;
+  // Fetches ONE page from the existing API using page + limit.
+  const fetchImagesForPage = useCallback(async (page = 1) => {
+    const params = { page, limit: ITEMS_PER_PAGE, sort: sortOrder };
+    if (typeFilter !== "all" && typeFilter !== "liked") {
+      params.type = typeFilter;
     }
+    const res = await axios.get(API_BASE_URL, { params });
+    const data = Array.isArray(res.data?.data) ? res.data.data : [];
+    const { resolvedHasNextPage } = parsePagination(res, page);
+    const total = res.data?.pagination?.total || 0;
 
+    let filteredData = data;
     if (typeFilter === "liked") {
-      return all.filter((image) =>
+      filteredData = data.filter((image) =>
         favoriteIdsRef.current.includes(getImageId(image))
       );
     }
-    return all;
+
+    return {
+      images: filteredData,
+      hasMore: resolvedHasNextPage,
+      total,
+    };
   }, [sortOrder, typeFilter]);
 
-  const fetchImages = useCallback(async () => {
-    const requestId = ++requestIdRef.current;
+  /**
+   * reset = true  -> clears the gallery and fetches ONLY page 1.
+   * reset = false -> fetches the next page and appends it (no duplicates).
+   * Returns false only if the request failed.
+   */
+  const fetchImages = useCallback(async (reset = true) => {
+    if (!reset && (isFetchingRef.current || !hasMoreRef.current)) return true;
+
+    const requestId = reset ? ++requestIdRef.current : requestIdRef.current;
     isFetchingRef.current = true;
-    setIsLoading(true);
 
-    try {
-      const all = await fetchAllImagesForCurrentFilter();
-      if (requestId !== requestIdRef.current) return;
-
-      const ordered = reorderGalleryImages(all, true);
-      setAllImages(ordered);
-      setTotalImages(ordered.length);
-      setVisibleCount(Math.min(ITEMS_PER_PAGE, ordered.length));
-    } catch (error) {
-      if (requestId !== requestIdRef.current) return;
-      console.error("Error fetching images:", error);
-      toast.error("Failed to load gallery");
+    if (reset) {
+      nextPageRef.current = 1;
+      hasMoreRef.current = true;
+      seenIdsRef.current = new Set();
+      setIsLoading(true);
+      setIsFetchingMore(false);
       setAllImages([]);
       setTotalImages(0);
-      setVisibleCount(0);
+      setHasMorePages(true);
+    } else {
+      setIsFetchingMore(true);
+    }
+
+    const isLiked = typeFilter === "liked";
+    let ok = true;
+
+    try {
+      const collected = [];
+      let hasMore = true;
+      let total = 0;
+
+      // Normal filters: exactly one page per call.
+      // "liked" filter: the backend can't filter by likes, so a page may have
+      // zero liked items — keep pulling consecutive pages until we have a
+      // page's worth (or run out).
+      do {
+        const page = nextPageRef.current;
+        const result = await fetchImagesForPage(page);
+
+        // A newer reset superseded this request — drop the response.
+        if (requestId !== requestIdRef.current) return true;
+
+        nextPageRef.current = page + 1;
+        hasMore = result.hasMore;
+        total = result.total;
+
+        for (const image of result.images) {
+          const id = getImageId(image);
+          if (id) {
+            if (seenIdsRef.current.has(id)) continue;
+            seenIdsRef.current.add(id);
+          }
+          collected.push(image);
+        }
+      } while (
+        hasMore &&
+        nextPageRef.current <= MAX_FETCH_PAGES &&
+        (collected.length === 0 ||
+          (isLiked && collected.length < ITEMS_PER_PAGE))
+      );
+
+      hasMoreRef.current = hasMore;
+      setHasMorePages(hasMore);
+      setTotalImages(isLiked ? favoriteIdsRef.current.length : total);
+
+      if (reset) {
+        setAllImages(reorderGalleryImages(collected, true));
+      } else {
+        setAllImages((prev) => [...prev, ...collected]);
+      }
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return true;
+      ok = false;
+      console.error("Error fetching images:", error);
+      toast.error("Failed to load gallery");
+      if (reset) {
+        setAllImages([]);
+        setTotalImages(0);
+      }
     } finally {
       if (requestId === requestIdRef.current) {
         isFetchingRef.current = false;
-        setIsLoading(false);
+        setIsFetchingMore(false);
+        if (reset) setIsLoading(false);
       }
     }
-  }, [fetchAllImagesForCurrentFilter]);
+    return ok;
+  }, [fetchImagesForPage, typeFilter]);
 
+  // Initial load / filter or sort change: page 1 only.
   useEffect(() => {
-    fetchImages();
-  }, [fetchImages]);
+    fetchImages(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, sortOrder]);
 
   const loadMoreImages = useCallback(() => {
-    if (isLoading || isFetchingRef.current || !hasNextPage) return;
-    isFetchingRef.current = true;
-    setIsFetchingMore(true);
-    requestAnimationFrame(() => {
-      setVisibleCount((prev) =>
-        Math.min(prev + ITEMS_PER_PAGE, allImages.length)
-      );
-      setIsFetchingMore(false);
-      isFetchingRef.current = false;
-    });
-  }, [isLoading, hasNextPage, allImages.length]);
+    if (isLoading || isFetchingRef.current || !hasMoreRef.current) return;
+    fetchImages(false);
+  }, [isLoading, fetchImages]);
 
+  // Mobile infinite scroll
   useEffect(() => {
     if (!isMobile) return;
     if (!loadMoreRef.current) return;
-    if (!hasNextPage) return;
+    if (!hasMorePages) return;
     if (isLoading || isFetchingMore) return;
 
     if (observerRef.current) observerRef.current.disconnect();
@@ -297,7 +363,14 @@ export default function BodyImage() {
     return () => {
       if (observerRef.current) observerRef.current.disconnect();
     };
-  }, [isMobile, hasNextPage, isLoading, isFetchingMore, loadMoreImages, galleryImages.length]);
+  }, [
+    isMobile,
+    hasMorePages,
+    isLoading,
+    isFetchingMore,
+    loadMoreImages,
+    galleryImages.length,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -326,28 +399,47 @@ export default function BodyImage() {
     });
   }, [isLoading, galleryImages, preloadedImages]);
 
+  // Open a shared look (?look=slug). If it isn't in the pages loaded so far,
+  // keep loading further pages (only in this deep-link case) until found.
   useEffect(() => {
     if (isLoading || openedFromLinkRef.current || allImages.length === 0) return;
-    openedFromLinkRef.current = true;
+
     const slug = new URLSearchParams(window.location.search).get("look");
-    if (!slug) return;
+    if (!slug) {
+      openedFromLinkRef.current = true;
+      return;
+    }
 
     const index = allImages.findIndex(
       (img) => getShareSlug(img?.image_url) === slug
     );
-    if (index === -1) {
-      toast.info("This image is no longer available");
+
+    if (index !== -1) {
+      openedFromLinkRef.current = true;
+      const image = allImages[index];
+      setPreviewImage(getPreviewImageUrl(image?.image_url) || null);
+      setPreviewImageIndex(index);
+      setPreviewType(image?.type || "other");
+      setPreviewPinned(Boolean(image?.isPinned));
       window.history.replaceState(null, "", window.location.pathname);
       return;
     }
-    setVisibleCount((prev) => Math.max(prev, index + 1));
-    const image = allImages[index];
-    setPreviewImage(getPreviewImageUrl(image?.image_url) || null);
-    setPreviewImageIndex(index);
-    setPreviewType(image?.type || "other");
-    setPreviewPinned(Boolean(image?.isPinned));
+
+    if (hasMorePages) {
+      if (isFetchingMore || isFetchingRef.current) return;
+      fetchImages(false).then((ok) => {
+        if (!ok && !openedFromLinkRef.current) {
+          openedFromLinkRef.current = true;
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+      });
+      return;
+    }
+
+    openedFromLinkRef.current = true;
+    toast.info("This image is no longer available");
     window.history.replaceState(null, "", window.location.pathname);
-  }, [isLoading, allImages]);
+  }, [isLoading, allImages, hasMorePages, isFetchingMore, fetchImages]);
 
   const compressImage = (file, quality = 0.9) => {
     return new Promise((resolve) => {
@@ -412,7 +504,7 @@ export default function BodyImage() {
         },
       });
 
-      await fetchImages();
+      await fetchImages(true);
       setSelectedFile(null);
       setSelectedType("");
       setSelectedFileName("");
@@ -605,11 +697,21 @@ export default function BodyImage() {
     return () => window.removeEventListener(OPEN_LIKED_EVENT, handleOpenLiked);
   }, [loadFavorites]);
 
+  // Listen for reset-filter event from mobile sidebar (for Gallery button)
+  useEffect(() => {
+    const handleResetFilter = () => {
+      setTypeFilter("all");
+    };
+
+    window.addEventListener(RESET_FILTER_EVENT, handleResetFilter);
+    return () => window.removeEventListener(RESET_FILTER_EVENT, handleResetFilter);
+  }, []);
+
   // Tell the Navbar which filter is active (sidebar highlight).
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent(FILTER_CHANGED_EVENT, {
-        detail: { 
+        detail: {
           liked: typeFilter === "liked",
           filter: typeFilter,
         },
@@ -746,6 +848,7 @@ export default function BodyImage() {
   };
 
   const preloadAdjacentImages = (currentIndex) => {
+    if (!previewImages.length) return;
     const indicesToPreload = [
       (currentIndex + 1) % previewImages.length,
       (currentIndex - 1 + previewImages.length) % previewImages.length,
@@ -941,26 +1044,30 @@ export default function BodyImage() {
               onClick={() => setTypeFilter("all")}
               className={typeFilter === "all" ? styles.active : ""}
             >
+              <RiGalleryView2 size={16} className={styles.filterIcon} />
               All
             </button>
             <button
               onClick={() => setTypeFilter("makeup")}
               className={typeFilter === "makeup" ? styles.active : ""}
             >
+              <MdBrush size={16} className={styles.filterIcon} />
               Makeup
             </button>
             <button
               onClick={() => setTypeFilter("hairstyle")}
               className={typeFilter === "hairstyle" ? styles.active : ""}
             >
+              <PiStarFourBold size={16} className={styles.filterIcon} />
               Hairstyle
             </button>
-            {/* Liked: desktop only, logged-in only */}
+            {/* Liked: desktop/tablet only, logged-in only */}
             {isLoggedIn && !isMobile && (
               <button
                 onClick={() => setTypeFilter("liked")}
                 className={typeFilter === "liked" ? styles.active : ""}
               >
+                <Heart size={16} className={styles.filterIcon} />
                 Liked
               </button>
             )}
@@ -1067,7 +1174,7 @@ export default function BodyImage() {
           )}
         </div>
 
-        {!isLoading && !isMobile && hasNextPage && (
+        {!isLoading && !isMobile && hasMorePages && (
           <div className={styles.pagination}>
             <button
               onClick={loadMoreImages}
@@ -1079,7 +1186,7 @@ export default function BodyImage() {
           </div>
         )}
 
-        {!isLoading && isMobile && hasNextPage && (
+        {!isLoading && isMobile && hasMorePages && (
           <div ref={loadMoreRef} className={styles.infiniteScrollTrigger}>
             {isFetchingMore ? "Loading more..." : "Scroll for more"}
           </div>

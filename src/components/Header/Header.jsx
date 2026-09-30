@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -46,7 +46,7 @@ const HeartIcon = ({ size = 16 }) => (
 const mobileLinks = [
   { href: "/", label: "Home" },
   { href: "/service", label: "Service" },
-  { href: "/gallery", label: "Gallery" },
+  { href: "/gallery", label: "Gallery", resetFilter: true },
   { href: "/contact", label: "Contact" },
   { href: "/gallery", label: "Gallery", filter: "liked", icon: <HeartIcon size={15} />, iconLabel: "Liked", requiresAuth: true },
 ];
@@ -71,7 +71,8 @@ const getAvatarLetter = (email) => {
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [isLikedActive, setIsLikedActive] = useState(false);
+  const [currentFilter, setCurrentFilter] = useState("all");
+  const previousPathnameRef = useRef(null);
 
   const pathname = usePathname();
   const router = useRouter();
@@ -79,16 +80,6 @@ export default function Navbar() {
   const { isLoggedIn, userEmail, googleLogin, logout } = useAuth();
 
   const avatarLetter = getAvatarLetter(userEmail);
-
-  // Listen for filter changes from Gallery to highlight Liked in sidebar
-  useEffect(() => {
-    const handleFilterChanged = (event) => {
-      setIsLikedActive(event.detail?.liked || false);
-    };
-
-    window.addEventListener("gallery:filter-changed", handleFilterChanged);
-    return () => window.removeEventListener("gallery:filter-changed", handleFilterChanged);
-  }, []);
 
   const handleBookNowClick = () => {
     setOpen(false);
@@ -125,6 +116,24 @@ export default function Navbar() {
     };
   }, [open]);
 
+  // Close mobile sidebar when route changes
+  useEffect(() => {
+    if (previousPathnameRef.current !== pathname) {
+      // Use setTimeout to defer setState and avoid cascading renders
+      setTimeout(() => setOpen(false), 0);
+      previousPathnameRef.current = pathname;
+    }
+  }, [pathname]);
+
+  // Listen for filter changes from BodyImage component
+  useEffect(() => {
+    const handleFilterChanged = (e) => {
+      setCurrentFilter(e.detail.filter || "all");
+    };
+    window.addEventListener("gallery:filter-changed", handleFilterChanged);
+    return () => window.removeEventListener("gallery:filter-changed", handleFilterChanged);
+  }, []);
+
   const handleUserIconClick = () => {
     if (!isLoggedIn) {
       googleLogin();
@@ -146,6 +155,20 @@ export default function Navbar() {
     
     // Dispatch event to open liked filter
     window.dispatchEvent(new CustomEvent("gallery:open-liked"));
+  };
+
+  const handleMobileGallery = (resetFilter = false) => {
+    setOpen(false);
+    
+    // Navigate to gallery
+    if (pathname !== "/gallery") {
+      router.push("/gallery");
+    }
+    
+    // Reset filter if requested
+    if (resetFilter) {
+      window.dispatchEvent(new CustomEvent("gallery:reset-filter"));
+    }
   };
 
   const handleMobileLogin = () => {
@@ -202,7 +225,10 @@ export default function Navbar() {
           ====================================================== */}
           <nav className="hidden lg:flex items-center gap-6 text-sm font-semibold">
             {links.map(({ href, label }) => {
-              const active = pathname === href;
+              // Active state based on current route and filter
+              const active = href === "/gallery" 
+                ? pathname === "/gallery" && currentFilter !== "liked"
+                : pathname === href;
 
               return (
                 <Link
@@ -409,20 +435,7 @@ export default function Navbar() {
                       hover:text-[#c2185b]
                     "
                   >
-                    <span
-                      className="
-                        flex h-8 w-8
-                        items-center justify-center
-                        rounded-full
-                        bg-gray-100
-                        text-gray-500
-                        text-xs
-                        transition-colors
-                        group-hover:bg-[#fce4ec]
-                      "
-                    >
-                      ↩
-                    </span>
+                    <RiLogoutCircleLine size={16} />
 
                     Logout
                   </button>
@@ -551,23 +564,33 @@ export default function Navbar() {
 
         {/* Navigation Links */}
         <ul className="flex flex-col space-y-3">
-          {mobileLinks.map(({ href, label, filter, icon, iconLabel, requiresAuth }) => {
+          {mobileLinks.map(({ href, label, filter, icon, iconLabel, requiresAuth, resetFilter }) => {
             // Skip auth-required items if not logged in
             if (requiresAuth && !isLoggedIn) return null;
 
-            const active = pathname === href && filter && (
-              filter === "liked" ? isLikedActive : currentFilter === filter
-            );
+            // Active state based on current route and filter
+            const active = filter === "liked" 
+              ? pathname === "/gallery" && currentFilter === "liked"
+              : href === "/gallery" 
+                ? pathname === "/gallery" && currentFilter !== "liked"
+                : pathname === href;
 
             const handleClick = () => {
-              setOpen(false);
-              if (filter === "liked") {
+              if (resetFilter) {
+                handleMobileGallery(true);
+              } else if (filter === "liked") {
                 handleMobileLiked();
+              } else {
+                // Regular navigation
+                setOpen(false);
+                if (pathname !== href) {
+                  router.push(href);
+                }
               }
             };
 
             return (
-              <li key={href + (filter || "")}>
+              <li key={href + (filter || "") + (resetFilter ? "-reset" : "")}>
                 {icon ? (
                   <button
                     type="button"
@@ -596,9 +619,9 @@ export default function Navbar() {
                     {iconLabel}
                   </button>
                 ) : (
-                  <Link
-                    href={href}
-                    onClick={() => setOpen(false)}
+                  <button
+                    type="button"
+                    onClick={handleClick}
                     className={`
                       flex items-center
                       rounded-xl
@@ -608,6 +631,7 @@ export default function Navbar() {
                       tracking-wide
                       transition-all
                       duration-200
+                      w-full text-left
                       ${
                         active
                           ? "bg-white text-[#7b1fa2] shadow-md"
@@ -616,7 +640,7 @@ export default function Navbar() {
                     `}
                   >
                     {label}
-                  </Link>
+                  </button>
                 )}
               </li>
             );

@@ -10,6 +10,7 @@ import Booking from "@/src/components/Booking/Booking";
 import AdvertisementPopup from "@/src/components/Booking/AdvertisementPopup";
 import FloatingActions from "@/src/components/FloatingActions/FloatingActions";
 import { AuthProvider } from "@/src/context/AuthContext";
+import ScrollToTop from "@/src/components/ScrollToTop/ScrollToTop";
 
 export const metadata = {
   title: "ʟᴏᴠᴇʟʏ ʟᴏᴏᴋꜱ",
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         >
           <AuthProvider>
             <BookingProvider>
+              <ScrollToTop />
               <Header />
               <main className="flex-1">{children}</main>
               <Footer />
